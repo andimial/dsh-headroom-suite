@@ -47,6 +47,40 @@ dsh plugin --profile web add github:wjxn13/dsh-headroom-suite#main
 [caveman](https://github.com/wjxn13/dsh-caveman) 负责输出侧压缩，与本套件
 （输入侧压缩 + 线路/进程管理）互补。两者可同时安装。
 
+### 实测结论（2026-08-26，dsh web + Headroom v0.35.0 + deepseek-v4-flash）
+
+两个插件**完全兼容、无冲突**，作用在不同层，可叠加省 token：
+
+| 层 | 负责插件 | 省的是什么 |
+|---|---|---|
+| 代理层（透明） | dsh-headroom-suite（Headroom 引擎） | 输入侧重复上下文压缩 + 前缀缓存对齐（缓存按 DeepSeek 1/10 价计费） |
+| 人设层（需开关） | dsh-caveman | 输出 token（可切换 lite / full / ultra 档） |
+
+实测方法：每组开全新 session 切到 `deepseek-official/deepseek-v4-flash`，
+开放题（TCP 三次握手、HTTP/2 改进）各问 2 轮，对比 caveman 关 / ultra。
+
+- **Headroom 代理层**：每请求稳定压缩约 **173 tok**（主要是 tool_schema 压缩，占输入约 1.2%），
+  对 caller 透明、不影响质量；真正的大头是**前缀缓存命中**——每轮 18k–37k tok 命中缓存，是长会话最大省费来源。
+- **caveman 输出侧**：ultra 档相对关闭，**输出 token 省 ~36.6%**（4098 → 2597）。
+- **组合**：输入侧重复上下文由 Headroom 转前缀缓存（约 1/10 价），输出侧由 caveman 砍 ~37%，二者打在不同层可同时开。
+
+> 想最大化省费，**稳定系统提示让 Headroom 冻结前缀缓存**比 caveman 档位更关键；长期会话 + 固定系统提示收益最大。
+
+### 启动注意（重要）
+
+代理启动**必须显式带 `--openai-api-url https://api.deepseek.com`**，否则
+`/v1/chat/completions` 路由会回落到默认的 `https://api.openai.com`，境内 DNS 解析失败 → 走该路由的请求全部 502。
+推荐启动命令：
+
+```bash
+headroom.exe proxy --port 8787 \
+  --anthropic-api-url https://api.deepseek.com/anthropic \
+  --openai-api-url https://api.deepseek.com \
+  --host 127.0.0.1 \
+  --connect-timeout-seconds 15 --request-timeout-seconds 120 \
+  --log-file ~/.headroom/logs/proxy.log
+```
+
 ## 上游致谢
 
 压缩引擎为 [Headroom](https://github.com/headroomlabs-ai/headroom)
