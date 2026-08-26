@@ -1,0 +1,59 @@
+{
+  "name": "@dsh-external/dsh-headroom-suite",
+  "version": "1.0.0",
+  "description": "Headroom 套件（二合一）：线路切换面板 + 代理管理面板。一键切换直连/压缩线路、实时 token 统计、引擎安装、代理进程启停与健康监控、累计节省统计。Built on headroomlabs-ai/headroom (Apache-2.0).",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:host": "node scripts/build.mjs --host",
+    "build:client": "node scripts/build.mjs --client"
+  },
+  "files": [
+    "lib",
+    "src",
+    "scripts",
+    "README.md",
+    "NOTICE",
+    "LICENSE"
+  ],
+  "license": "Apache-2.0",
+  "author": "wjxn13",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "headroom",
+    "context-compression",
+    "token-saving",
+    "proxy-manager"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^18.3.31",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
