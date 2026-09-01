@@ -1,5 +1,11 @@
 # dsh-headroom-suite
 
+## 兼容的 Harness 版本
+
+- **已验证支持**：DeepSeek Harness `0.1.0-rc.6`（web profile）。
+- **最新版 `0.1.2-alpha.3`**：适配计划进行中，暂无确切完成时间。升级前请先备份你的 DSH 安装。
+
+
 > DeepSeek Harness 的 **Headroom 压缩代理一体化套件**（二合一插件）——由 [dsh-headroom](https://github.com/wjxn13/dsh-headroom)（线路切换）与 [dsh-headroom-manager](https://github.com/wjxn13/dsh-headroom-manager)（代理管理）合并而成，一条命令安装全部功能。
 
 **一句话定位**：把 [Headroom](https://github.com/headroomlabs-ai/headroom) 的**真实压缩引擎**接进 DeepSeek Harness，提供「一键切换压缩线路 + 代理进程管理 + 实时 token 统计」的完整面板。压缩由 Headroom 引擎在进程外完成，本套件负责环境、路由、UI 与监控，不重新实现压缩算法。
