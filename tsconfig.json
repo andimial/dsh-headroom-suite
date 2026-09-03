@@ -15,7 +15,7 @@
     "paths": {
       "@deepseek-ai/cordis": ["D:/dsh/node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-client-runtime/client": ["D:/dsh/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-client-web-react": ["D:/dsh/node_modules/@deepseek-ai/dsh-client-web-react/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-client-ui-renderer/client": ["E:/npm/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-renderer/lib/types/client/index.d.ts"],
       "@deepseek-ai/dsh-client-ui-settings/client": ["D:/dsh/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/index.d.ts"],
       "@deepseek-ai/dsh-client-locale/client": ["D:/dsh/node_modules/@deepseek-ai/dsh-client-locale/lib/types/client/index.d.ts"],
       "@deepseek-ai/dsh-api-remotes/client": ["D:/dsh/node_modules/@deepseek-ai/dsh-api-remotes/lib/types/client/index.d.ts"],

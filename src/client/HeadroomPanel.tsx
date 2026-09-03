@@ -13,10 +13,9 @@
  * compression engine is Headroom (see NOTICE).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL } from '../constants.ts'
 import { EMPTY_STATS, fetchHeadroomStats, formatTokens } from './stats.ts'
 import type { HeadroomStatsView } from './stats.ts'
@@ -33,8 +32,6 @@ export interface DeepSeekRouteSettings {
 export interface HeadroomPanelInjected {
   /** Hot-reloaded `llm-deepseek` namespace scope. */
   scope: SettingsScope<DeepSeekRouteSettings>
-  /** uSES hook bound to the scope snapshot. */
-  useSnapshot: SnapshotSelectorHook<SettingsScopeSnapshot<DeepSeekRouteSettings>>
   /** Panel copy. */
   t: (key: keyof typeof en) => string
   /** Execute a host command (e.g. '/headroom start') and return its result. */
@@ -89,9 +86,13 @@ async function probeHeadroom(): Promise<Exclude<ProbeState, { kind: 'idle' | 'pr
  * @returns the panel content.
  */
 export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
-  const { scope, useSnapshot, t, runCommand } = props
-  if (scope === undefined || useSnapshot === undefined || t === undefined) return null
-  const snapshot = useSnapshot((s) => s)
+  const { scope, t, runCommand } = props
+  if (scope === undefined || t === undefined) return null
+  const snapshot = useSyncExternalStore(
+    (listener) => scope.subscribe(listener),
+    () => scope.getSnapshot(),
+  )
+  if (snapshot.status === 'loading' || snapshot.status === 'unavailable') return null
   const baseURL = snapshot.value?.baseURL
   const writable = snapshot.writable === true
   const route = routeOf(baseURL)

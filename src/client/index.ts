@@ -10,7 +10,6 @@
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry)
 // and the ctx.settingsScope Context merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -50,14 +49,12 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-headroom-suite: copy dictionaries')
 
   const scope = ctx.settingsScope.bind<DeepSeekRouteSettings>({ namespace: LLM_DEEPSEEK_NAMESPACE })
-  const useSnapshot = bindSnapshotSelector(scope)
   const t = ctx.locale.bind(NS) as HeadroomPanelInjected['t']
   // Host command channel: execute('/headroom start') etc. via the commands remote.
   const remote = ctx.get('remote') as { command?: { execute: (agentId: unknown, line: string) => Promise<unknown> } } | undefined
   const sessions = ctx.get('sessions') as { current?: () => { sessionId: string } | undefined } | undefined
   const injected = (): HeadroomPanelInjected => ({
     scope,
-    useSnapshot,
     t,
     runCommand: async (line: string) => {
       // Resolve the current agent session id for the command RPC; fall back to

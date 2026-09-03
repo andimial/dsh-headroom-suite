@@ -2,8 +2,8 @@
 
 ## 兼容的 Harness 版本
 
-- **已验证支持**：DeepSeek Harness `0.1.0-rc.6`（web profile）。
-- **最新版 `0.1.2-alpha.3`**：适配计划进行中，暂无确切完成时间。升级前请先备份你的 DSH 安装。
+- **已验证支持**：DeepSeek Harness `0.1.2-alpha.5`（web profile）。客户端模块表按 alpha 系列适配（`bindSnapshotSelector` 来自 `@deepseek-ai/dsh-client-ui-renderer/client`）。
+- **`0.1.0-rc.6`**：由历史版本（`@deepseek-ai/dsh-client-web-react` 时代的旧构建）支持；本仓库当前 HEAD 不再兼容 rc.6 的客户端模块表。
 
 
 > DeepSeek Harness 的 **Headroom 压缩代理一体化套件**（二合一插件）——由 [dsh-headroom](https://github.com/wjxn13/dsh-headroom)（线路切换）与 [dsh-headroom-manager](https://github.com/wjxn13/dsh-headroom-manager)（代理管理）合并而成，一条命令安装全部功能。
