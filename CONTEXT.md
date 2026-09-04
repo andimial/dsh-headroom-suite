@@ -6,7 +6,7 @@
 
 `llm-deepseek` 命名空间 `baseURL` 字段所指向的请求路径。当前取值为三态之一：
 
-- **直连线路（direct）**：`baseURL` 为 `undefined`，或显式等于 DeepSeek 官方端点。
+- **直连线路（direct）**：`baseURL` 为 `undefined`、空白，或等于 DeepSeek 官方端点（`https://api.deepseek.com` 的 `/v1`、尾斜杠与 `/anthropic` 拼写变体均视为官方端点）。
 - **压缩线路（headroom）**：`baseURL` 指向本地 Headroom 压缩代理。
 - **第三方地址（third-party baseURL）**：除上述两值以外的任意 `baseURL`。
 

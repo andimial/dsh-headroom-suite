@@ -63,6 +63,8 @@ Host 命令通道 `src/index.ts` `startProxy()`：
 
 ## 4. 接其他提供方模型：最小改动清单（建议）
 
+> **实现状态**（跟进 a4a954c 及其后续提交）：第 6 条已落地——`routeOf` 第三方识别（官方端点变体归直连）与面板「第三方 baseURL」录入 UI（`POST /headroom-mgr/route` 新增 `third-party` target）；第 1、2、4、5、7 条未实现，第 3 条未动。当前第三方线路语义 = DSH 直发该地址（不经压缩）。
+
 目标场景：DSH（OpenAI 协议客户端）通过 Headroom 压缩访问**其他 OpenAI 兼容提供方**（第三方/自建网关等）。
 
 1. **上游地址可配置化**：`src/constants.ts` 的 `DEEPSEEK_OPENAI_URL` 改为从配置读取（插件自有 settings 命名空间，或复用现有设置 seam），不再写死。

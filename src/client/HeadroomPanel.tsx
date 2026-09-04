@@ -2,10 +2,11 @@
  * dsh-headroom browser half: the "线路切换" settings section.
  *
  * Presents the Headroom compression route as a control panel:
- *  - current route (direct / compressed / unknown) from the `llm-deepseek`
+ *  - current route (direct / compressed / third-party) from the `llm-deepseek`
  *    settings namespace
  *  - Headroom health (probed in-browser; the proxy answers loopback CORS)
- *  - one-click route toggle (writes `llm-deepseek.baseURL`)
+ *  - one-click route toggle and third-party baseURL entry, both via the
+ *    POST /headroom-mgr/route host route
  *
  * The heavy lifecycle actions (install / start / stop) are orchestrated by the
  * host half; the UI surfaces their outcomes through the settings snapshot and
@@ -16,15 +17,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL } from '../constants.ts'
+import { HEADROOM_LIVEZ_URL, isUsableThirdPartyBaseURL, MGR_ROUTE_PATH, MGR_STATUS_PATH, routeOf } from '../constants.ts'
 import { EMPTY_STATS, fetchHeadroomStats, formatTokens } from './stats.ts'
 import type { HeadroomStatsView } from './stats.ts'
 import type { en } from './locales.ts'
 import styles from './HeadroomPanel.css.ts'
-
-/** Host HTTP routes backing the route toggle and saved third-party baseURL. */
-const ROUTE_URL = '/headroom-mgr/route'
-const STATUS_URL = '/headroom-mgr/status'
 
 /** The narrowed `llm-deepseek` section this page reads and writes. */
 export interface DeepSeekRouteSettings {
@@ -52,11 +49,14 @@ type ProbeState =
   | { kind: 'healthy'; version: string }
   | { kind: 'down' }
 
-/** The resolved route name for a baseURL value (undefined = direct default). */
-function routeOf(baseURL: string | undefined): 'direct' | 'headroom' | 'unknown' {
-  if (baseURL === undefined || baseURL === DIRECT_BASE_URL) return 'direct'
-  if (baseURL === HEADROOM_BASE_URL) return 'headroom'
-  return 'unknown'
+/** Body of the POST /headroom-mgr/route reply (only the fields this panel reads). */
+interface RouteResponse {
+  ok?: boolean
+  error?: string
+  savedBaseURL?: string | null
+  restoredBaseURL?: string | null
+  sidecarCleanupFailed?: boolean
+  baseURL?: string
 }
 
 /**
@@ -82,23 +82,46 @@ async function probeHeadroom(): Promise<Exclude<ProbeState, { kind: 'idle' | 'pr
   }
 }
 
+/** POST a route-switch payload; returns the HTTP status and parsed reply. */
+async function postRoute(payload: Record<string, unknown>): Promise<{ status: number; body: RouteResponse }> {
+  const response = await fetch(MGR_ROUTE_PATH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  })
+  const body = await response.json() as RouteResponse
+  return { status: response.status, body }
+}
+
 /**
  * Render the Headroom control panel: current route, proxy health, route
- * toggle, and the safety notes. All writes go through the settings scope; the
+ * toggle, and the safety notes. The host half owns the actual writes; the
  * panel re-renders from the next snapshot.
  * @param props - the inject face (scope, snapshot hook, copy).
  * @returns the panel content.
  */
 export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
-  const { scope, t, runCommand } = props
+  const { scope, t } = props
   if (scope === undefined || t === undefined) return null
+  // Body owns every hook so none of them sit behind a conditional return.
+  return <HeadroomPanelBody scope={scope} t={t} runCommand={props.runCommand} />
+}
+
+/** Body props: scope/t are guaranteed here; runCommand stays optional. */
+type HeadroomPanelBodyProps = Omit<HeadroomPanelInjected, 'runCommand'> & {
+  runCommand?: HeadroomPanelInjected['runCommand']
+}
+
+function HeadroomPanelBody(props: HeadroomPanelBodyProps): ReactNode {
+  const { scope, t, runCommand } = props
   const snapshot = useSyncExternalStore(
     (listener) => scope.subscribe(listener),
     () => scope.getSnapshot(),
   )
-  if (snapshot.status === 'loading' || snapshot.status === 'unavailable') return null
-  const baseURL = snapshot.value?.baseURL
-  const writable = snapshot.writable === true
+  const ready = snapshot.status === 'ready'
+  const baseURL = ready ? snapshot.value?.baseURL : undefined
+  const writable = ready && snapshot.writable === true
   const route = routeOf(baseURL)
   const [probe, setProbe] = useState<ProbeState>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
@@ -108,17 +131,18 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
   const [opResult, setOpResult] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [stats, setStats] = useState<HeadroomStatsView>(EMPTY_STATS)
   const [savedBaseURL, setSavedBaseURL] = useState<string | null>(null)
+  const [customURL, setCustomURL] = useState('')
 
   useEffect(() => {
-    if (route !== 'headroom' || probe.kind !== 'idle') return
+    if (!ready || route !== 'headroom' || probe.kind !== 'idle') return
     setProbe({ kind: 'probing' })
     void probeHeadroom().then(setProbe)
-  }, [route, probe.kind])
+  }, [ready, route, probe.kind])
 
   // Read the saved third-party baseURL (if any) once on mount so the panel can
   // show what switching back to direct will restore.
   useEffect(() => {
-    fetch(STATUS_URL, { cache: 'no-store' })
+    fetch(MGR_STATUS_PATH, { cache: 'no-store' })
       .then((r) => r.json())
       .then((b: { savedBaseURL?: unknown }) => {
         setSavedBaseURL(typeof b.savedBaseURL === 'string' ? b.savedBaseURL : null)
@@ -141,28 +165,48 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
     }
   }, [])
 
+  // Keep the third-party input in sync with reality: the live value while on
+  // the third-party route, otherwise the URL a direct switch would restore.
+  useEffect(() => {
+    setCustomURL(route === 'third-party' ? baseURL ?? '' : savedBaseURL ?? '')
+  }, [route, baseURL, savedBaseURL])
+
+  if (!ready) return null
+
   const switchRoute = async (target: 'direct' | 'headroom'): Promise<void> => {
     if (!writable) return
     setBusy(true)
     setError(null)
     setDone(false)
     try {
-      const response = await fetch(ROUTE_URL, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ target }),
-        cache: 'no-store',
-      })
-      const body = await response.json() as {
-        ok?: boolean
-        error?: string
-        savedBaseURL?: string | null
-        restoredBaseURL?: string | null
+      const { status, body } = await postRoute({ target })
+      if (status < 200 || status >= 300 || body.ok !== true) throw new Error(body.error ?? `HTTP ${status}`)
+      if (target === 'headroom') {
+        // A successful headroom switch keeps the saved third-party baseURL.
+        setSavedBaseURL(body.savedBaseURL ?? null)
+      } else if (body.sidecarCleanupFailed === true && typeof body.restoredBaseURL === 'string') {
+        // Direct switch worked but the sidecar survived — keep showing the
+        // stale URL the next direct switch would (re)apply.
+        setSavedBaseURL(body.restoredBaseURL)
+      } else {
+        setSavedBaseURL(null)
       }
-      if (!response.ok || body.ok !== true) throw new Error(body.error ?? `HTTP ${response.status}`)
-      // A successful headroom switch keeps a saved third-party baseURL; a
-      // successful direct switch consumed and deleted it.
-      setSavedBaseURL(target === 'headroom' ? (body.savedBaseURL ?? null) : null)
+      setDone(true)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const applyThirdParty = async (): Promise<void> => {
+    if (!writable) return
+    setBusy(true)
+    setError(null)
+    setDone(false)
+    try {
+      const { status, body } = await postRoute({ target: 'third-party', baseURL: customURL.trim() })
+      if (status < 200 || status >= 300 || body.ok !== true) throw new Error(body.error ?? `HTTP ${status}`)
       setDone(true)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
@@ -195,7 +239,8 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
 
   const routeLabel = route === 'direct' ? t('routeDirect')
     : route === 'headroom' ? t('routeHeadroom')
-      : t('routeUnknown')
+      : t('routeThirdParty')
+  const customValid = isUsableThirdPartyBaseURL(customURL.trim())
 
   return (
     <section className={styles['section']} aria-label={t('title')}>
@@ -241,6 +286,28 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
             <span className={styles['value']}>{t('savedThirdParty').replace('{url}', savedBaseURL)}</span>
           </div>
           : null}
+        <div className={styles['row']}>
+          <span className={styles['label']}>{t('thirdPartyLabel')}</span>
+        </div>
+        <div className={styles['actions']}>
+          <input
+            type="text"
+            className={styles['input']}
+            value={customURL}
+            placeholder={t('thirdPartyPlaceholder')}
+            disabled={busy || !writable}
+            onChange={(e) => { setCustomURL(e.target.value) }}
+          />
+          <button
+            type="button"
+            className="dsw-button"
+            disabled={busy || !writable || !customValid}
+            onClick={() => { void applyThirdParty() }}
+          >
+            {t('applyThirdParty')}
+          </button>
+        </div>
+        <div className={styles['statsNote']}>{t('thirdPartyHint')}</div>
         <div className={styles['row']}>
           <span className={styles['label']}>{t('headroomStatus')}</span>
           {probe.kind === 'healthy'

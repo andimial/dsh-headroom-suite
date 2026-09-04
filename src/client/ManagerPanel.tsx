@@ -6,10 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-
-const STATUS_URL = '/headroom-mgr/status'
-const START_URL = '/headroom-mgr/start'
-const STOP_URL = '/headroom-mgr/stop'
+import { MGR_START_PATH, MGR_STATUS_PATH, MGR_STOP_PATH } from '../constants.ts'
 
 function fetchJson(url: string, opts?: RequestInit): Promise<Record<string, unknown>> {
   return fetch(url, Object.assign({ cache: 'no-store' }, opts)).then((r) => r.json())
@@ -68,7 +65,7 @@ export function ManagerPanel(): ReactNode {
   const [msg, setMsg] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
-    fetchJson(STATUS_URL).then((s) => {
+    fetchJson(MGR_STATUS_PATH).then((s) => {
       setSt(s as StatusBody)
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -82,7 +79,7 @@ export function ManagerPanel(): ReactNode {
   const doStart = async (): Promise<void> => {
     setBusy('start'); setMsg(null)
     try {
-      const r = await postJson(START_URL)
+      const r = await postJson(MGR_START_PATH)
       if (r.body.ok && r.body.healthyAfterStart) setMsg(zh.startOk)
       else if (r.body.ok) setMsg(zh.startedSlow)
       else setMsg(zh.startFail + ': ' + JSON.stringify(r.body))
@@ -93,7 +90,7 @@ export function ManagerPanel(): ReactNode {
   const doStop = async (): Promise<void> => {
     setBusy('stop'); setMsg(null)
     try {
-      const r = await postJson(STOP_URL)
+      const r = await postJson(MGR_STOP_PATH)
       setMsg(r.body.ok ? zh.stopOk : zh.stopFail + ': ' + JSON.stringify(r.body))
       refresh()
     } catch (e) { setMsg(zh.stopFail + ': ' + String(e)) }
