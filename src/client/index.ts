@@ -19,6 +19,7 @@ import { HeadroomPanel } from './HeadroomPanel.tsx'
 import type { DeepSeekRouteSettings, HeadroomPanelInjected } from './HeadroomPanel.tsx'
 import { ManagerPanel } from './ManagerPanel.tsx'
 import { en, zh, type HeadroomPanelKey } from './locales.ts'
+import { resolveAgentId, type SessionsServiceFace } from './agentId.ts'
 import { LLM_DEEPSEEK_NAMESPACE } from '../constants.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -35,10 +36,11 @@ const NS = 'dsh-headroom'
  * Required services (cordis fiber inject). The `settings.section` declaration
  * lives in ui-settings-general's SettingsRoot entry; registration waits on it
  * through `slots.inject()`. `settingsScope` supplies the hot-reloaded
- * `llm-deepseek` namespace scope; `remote` exposes the host command channel
- * used by the lifecycle buttons; `sessions` resolves the active agent id.
+ * `llm-deepseek` namespace scope; `remote` + `remote.commands` expose the host
+ * command channel used by the lifecycle buttons (same inject face as
+ * dsh-client-ui-plan); `sessions` resolves the active agent id.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.commands', 'settingsScope', 'sessions']
 
 /**
  * Register both Headroom panels once the `settings.section` declaration is on
@@ -50,28 +52,48 @@ export function apply(ctx: ClientContext): void {
 
   const scope = ctx.settingsScope.bind<DeepSeekRouteSettings>({ namespace: LLM_DEEPSEEK_NAMESPACE })
   const t = ctx.locale.bind(NS) as HeadroomPanelInjected['t']
-  // Host command channel: execute('/headroom start') etc. via the commands remote.
-  const remote = ctx.get('remote') as { command?: { execute: (agentId: unknown, line: string) => Promise<unknown> } } | undefined
-  const sessions = ctx.get('sessions') as { current?: () => { sessionId: string } | undefined } | undefined
+  // Host command channel: execute('/headroom-install') etc. via the commands
+  // remote. The service shape is the official SessionRemotes.commands surface
+  // (dsh-api-session-controller): execute(agentId, line, images, signal?)
+  // resolving to RemoteResult ({ ok, value } | { ok, error }).
+  const remote = ctx.get('remote') as {
+    commands?: {
+      execute: (agentId: unknown, line: string, images: readonly unknown[], signal?: AbortSignal) =>
+        Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string; code: string } }>
+    }
+  } | undefined
+  const sessions = ctx.get('sessions') as SessionsServiceFace | undefined
   const injected = (): HeadroomPanelInjected => ({
     scope,
     t,
     runCommand: async (line: string) => {
-      // Resolve the current agent session id for the command RPC; fall back to
-      // "current" when no session service is available.
-      let agentId: unknown = 'current'
-      try {
-        const current = sessions?.current?.()
-        if (current !== undefined) agentId = current.sessionId
-      } catch { /* keep 'current' */ }
-      if (remote?.command?.execute === undefined) {
+      // Resolve the current agent session id for the command RPC. Official
+      // ClientSessions exposes it on the list snapshot (sessions.list
+      // .getSnapshot().current) — there is no current() method. When it is
+      // unavailable, fail with a clear message: sending a literal 'current'
+      // gets rejected by the host as session/not-found.
+      const agentId = resolveAgentId(sessions)
+      if (agentId === undefined) {
+        return { kind: 'error', text: t('error').replace('{message}', 'no active session — open a session before running host commands') }
+      }
+      const commands = remote?.commands
+      if (commands?.execute === undefined) {
         return { kind: 'error', text: t('error').replace('{message}', 'host command channel unavailable') }
       }
-      const raw = await remote.command.execute(agentId, line)
-      const result = (raw as { result?: { kind?: string; text?: string } } | undefined)?.result
+      // RemoteResult triage, mirroring dsh-client-ui-commands' execute():
+      // !ok → transport/admission failure; value === undefined → unknown
+      // command; value.result carries the handler outcome { kind, text }.
+      const raw = await commands.execute(agentId, line, [])
+      if (raw.ok === false) {
+        return { kind: 'error', text: t('error').replace('{message}', `${raw.error.message} (${raw.error.code})`) }
+      }
+      if (raw.value === undefined) {
+        return { kind: 'error', text: t('error').replace('{message}', `unknown or malformed command: ${line}`) }
+      }
+      const outcome = (raw.value as { result?: { kind?: string; text?: string } }).result
       return {
-        kind: result?.kind === 'error' ? 'error' : 'success',
-        text: result?.text ?? String(raw),
+        kind: outcome?.kind === 'error' ? 'error' : 'success',
+        text: outcome?.text ?? 'OK',
       }
     },
   })

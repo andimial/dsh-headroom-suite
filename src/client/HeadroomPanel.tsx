@@ -20,7 +20,7 @@ import { DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL } from '../const
 import { EMPTY_STATS, fetchHeadroomStats, formatTokens } from './stats.ts'
 import type { HeadroomStatsView } from './stats.ts'
 import type { en } from './locales.ts'
-import styles from './HeadroomPanel.module.css'
+import styles from './HeadroomPanel.css.ts'
 
 /** The narrowed `llm-deepseek` section this page reads and writes. */
 export interface DeepSeekRouteSettings {
