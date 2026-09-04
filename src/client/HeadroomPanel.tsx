@@ -22,6 +22,10 @@ import type { HeadroomStatsView } from './stats.ts'
 import type { en } from './locales.ts'
 import styles from './HeadroomPanel.css.ts'
 
+/** Host HTTP routes backing the route toggle and saved third-party baseURL. */
+const ROUTE_URL = '/headroom-mgr/route'
+const STATUS_URL = '/headroom-mgr/status'
+
 /** The narrowed `llm-deepseek` section this page reads and writes. */
 export interface DeepSeekRouteSettings {
   /** The configured endpoint override; undefined means the composition default. */
@@ -103,12 +107,24 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
   const [opBusy, setOpBusy] = useState<string | null>(null)
   const [opResult, setOpResult] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [stats, setStats] = useState<HeadroomStatsView>(EMPTY_STATS)
+  const [savedBaseURL, setSavedBaseURL] = useState<string | null>(null)
 
   useEffect(() => {
     if (route !== 'headroom' || probe.kind !== 'idle') return
     setProbe({ kind: 'probing' })
     void probeHeadroom().then(setProbe)
   }, [route, probe.kind])
+
+  // Read the saved third-party baseURL (if any) once on mount so the panel can
+  // show what switching back to direct will restore.
+  useEffect(() => {
+    fetch(STATUS_URL, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((b: { savedBaseURL?: unknown }) => {
+        setSavedBaseURL(typeof b.savedBaseURL === 'string' ? b.savedBaseURL : null)
+      })
+      .catch(() => {})
+  }, [])
 
   // Live stats: poll Headroom /stats every 10s while the panel is mounted.
   useEffect(() => {
@@ -131,8 +147,22 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
     setError(null)
     setDone(false)
     try {
-      if (target === 'direct') await scope.unset('baseURL')
-      else await scope.set('baseURL', HEADROOM_BASE_URL)
+      const response = await fetch(ROUTE_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target }),
+        cache: 'no-store',
+      })
+      const body = await response.json() as {
+        ok?: boolean
+        error?: string
+        savedBaseURL?: string | null
+        restoredBaseURL?: string | null
+      }
+      if (!response.ok || body.ok !== true) throw new Error(body.error ?? `HTTP ${response.status}`)
+      // A successful headroom switch keeps a saved third-party baseURL; a
+      // successful direct switch consumed and deleted it.
+      setSavedBaseURL(target === 'headroom' ? (body.savedBaseURL ?? null) : null)
       setDone(true)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
@@ -206,6 +236,11 @@ export function HeadroomPanel(props: HeadroomPanelProps): ReactNode {
           <span className={styles['label']}>{t('current')}</span>
           <span className={styles['value']}>{routeLabel}</span>
         </div>
+        {route === 'headroom' && savedBaseURL !== null
+          ? <div className={styles['row']}>
+            <span className={styles['value']}>{t('savedThirdParty').replace('{url}', savedBaseURL)}</span>
+          </div>
+          : null}
         <div className={styles['row']}>
           <span className={styles['label']}>{t('headroomStatus')}</span>
           {probe.kind === 'healthy'

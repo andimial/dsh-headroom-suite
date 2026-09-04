@@ -255,12 +255,12 @@ export async function status(): Promise<{
  * command channel, plus the /headroom-mgr/* HTTP routes for the browser
  * process-management panel (merged from dsh-headroom-manager).
  */
-export const inject = ['commands']
+export const inject = ['commands', 'settings']
 
 export function apply(ctx: Context): void {
   const log = (message: string): void => { ctx.logger?.info(`[dsh-headroom-suite] ${message}`) }
 
-  ctx.inject(['webServer'], (scoped: Context) => {
+  ctx.inject(['settings', 'webServer'], (scoped: Context) => {
     scoped.effect(() => mountManagerRoutes(scoped), 'dsh-headroom-suite http routes')
   })
 
