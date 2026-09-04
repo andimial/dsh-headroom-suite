@@ -15,17 +15,40 @@
  * page cannot start or kill processes through the user's browser (CSRF).
  */
 import { spawn, exec } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL } from './constants.ts'
 
-const HEADROOM_EXE = 'D:\\python\\Scripts\\headroom.exe'
 const HEADROOM_PORT = 8787
 const LIVEZ_URL = `http://127.0.0.1:${HEADROOM_PORT}/livez`
-/** Mirrors start-headroom.vbs env so behavior matches the desktop shortcut. */
+/** Mirrors startProxy() env (src/index.ts) so the panel matches /headroom-start. */
 const HEADROOM_ENV = {
   HEADROOM_DETECT_BACKEND: 'python',
   HEADROOM_TOOL_SEARCH: 'off',
+  // The Kompress ONNX model (chopratejas/kompress-base) has never completed
+  // downloading on this machine (HF cache holds a 0-byte .incomplete blob);
+  // proxy startup hangs forever in "Pre-loading compressors and parsers..."
+  // trying to fetch it. Skip Kompress so the proxy binds the port; TEXT/CODE
+  // compression still works. Remove once the model is cached
+  // (set HF_ENDPOINT=https://hf-mirror.com and start without this flag).
+  HEADROOM_DISABLE_KOMPRESS: '1',
+}
+/** Plugin-managed venv (keep in sync with pluginHome()/venvHeadroom() in src/index.ts). */
+const PLUGIN_HOME = join(homedir(), '.dsh-headroom')
+
+/** The headroom.exe the plugin installs into its own venv. */
+function venvHeadroomExe(): string {
+  return process.platform === 'win32'
+    ? join(PLUGIN_HOME, 'venv', 'Scripts', 'headroom.exe')
+    : join(PLUGIN_HOME, 'venv', 'bin', 'headroom')
+}
+
+function proxyLogPath(): string {
+  return join(PLUGIN_HOME, 'proxy.log')
 }
 
 interface SavingsLifetime {
@@ -132,7 +155,7 @@ export function mountManagerRoutes(ctx: Context): () => void {
       running,
       version: livez?.version,
       pid,
-      exe: HEADROOM_EXE,
+      exe: venvHeadroomExe(),
       port: HEADROOM_PORT,
       savings: savings ?? null,
     }
@@ -164,20 +187,42 @@ export function mountManagerRoutes(ctx: Context): () => void {
           return
         }
         try {
-          // Launch via `cmd /c start` so the proxy escapes dsh's process tree:
-          // a plain detached spawn still dies when the dsh host crashes or is
-          // killed (Windows job object semantics), which would take the proxy
-          // down with it. `start` creates a fully independent process.
-          const vbsPath = `${process.env.USERPROFILE}\\.headroom\\start-headroom.vbs`
-          const child = spawn('cmd.exe', ['/c', 'start', '""', 'wscript.exe', `"${vbsPath}"`], {
+          // Target: the plugin-venv headroom.exe with the same args/env as
+          // startProxy() (src/index.ts). Two earlier launch strategies failed:
+          //  - `%USERPROFILE%\.headroom\start-headroom.vbs` was a leftover from
+          //    the author's machine and never exists on fresh installs.
+          //  - `cmd /c start "" wscript/exe...` creates the process but it hangs
+          //    before binding the port in the dsh host's non-interactive session
+          //    (console creation under `start` never completes). A plain
+          //    detached spawn with stdio ignored starts fine.
+          // Trade-off: a plain detached child dies with the dsh host process
+          // tree (Windows job object semantics) — restart the proxy after a
+          // host crash.
+          const exe = venvHeadroomExe()
+          if (!existsSync(exe)) {
+            sendJson(response, 409, { ok: false, error: 'headroom not installed; run /headroom-install' })
+            return
+          }
+          const startArgs = [
+            'proxy',
+            '--port', String(HEADROOM_PORT),
+            '--anthropic-api-url', DEEPSEEK_ANTHROPIC_URL,
+            '--openai-api-url', DEEPSEEK_OPENAI_URL,
+            '--host', '127.0.0.1',
+            '--connect-timeout-seconds', '15',
+            '--request-timeout-seconds', '120',
+            '--log-file', proxyLogPath(),
+          ]
+          const child = spawn(exe, startArgs, {
             detached: true,
             stdio: 'ignore',
-            windowsVerbatimArguments: true,
+            env: { ...process.env, ...HEADROOM_ENV },
           })
           child.unref()
-          // give the proxy a moment to bind before reporting (vbs → wscript →
-          // headroom cold start takes ~10s; poll up to 20s)
-          const deadline = Date.now() + 20000
+          // give the proxy a moment to bind before reporting: cold start loads
+          // transformers/tokenizers from a cold venv (~50-90s on this machine,
+          // measured); poll up to 120s before reporting not-ready.
+          const deadline = Date.now() + 120000
           let live: unknown = undefined
           while (Date.now() < deadline) {
             await new Promise((r) => setTimeout(r, 1500))

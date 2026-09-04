@@ -180,13 +180,18 @@ export async function startProxy(log: (message: string) => void): Promise<{ ok: 
         ...process.env,
         HEADROOM_DETECT_BACKEND: 'python', // avoid Windows detect_content_type deadlock
         HEADROOM_TOOL_SEARCH: 'off',       // DeepSeek does not know the Anthropic tool_search type
+        // Kompress ONNX model never finished downloading on this machine (0-byte
+        // .incomplete blob in the HF cache); proxy hangs in pre-load without this.
+        // See routes.ts HEADROOM_ENV for the full note.
+        HEADROOM_DISABLE_KOMPRESS: '1',
       },
     })
     child.unref()
     writeFileSync(startupLogPath(), `${new Date().toISOString()} spawned headroom proxy pid=${child.pid}\n`, { flag: 'a' })
     log(`Headroom proxy starting (pid ${child.pid}). Waiting for health...`)
-    // The first cold start loads the tokenizer; poll up to 30s.
-    for (let i = 0; i < 30; i++) {
+    // Cold start loads transformers/tokenizers from a cold venv — measured
+    // ~50-90s on this machine; poll up to 120s.
+    for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 1000))
       const now = await probeHealth(1500)
       if (now.healthy) return { ok: true, message: `Headroom healthy (v${now.version ?? '?'}).` }
