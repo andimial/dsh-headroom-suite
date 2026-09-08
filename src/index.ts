@@ -15,40 +15,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
 import { spawn, execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
 import {
   DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL, HEADROOM_BASE_URL, HEADROOM_PORT,
 } from './constants.ts'
+import {
+  HEADROOM_ENV, installLogPath, pluginHome, proxyLogPath, startupLogPath,
+  venvCreateLogPath, venvDir, venvHeadroom, venvPython,
+} from './paths.ts'
 import { mountManagerRoutes } from './routes.ts'
 
 export { DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL, DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL, HEADROOM_PORT, LLM_DEEPSEEK_NAMESPACE, PLUGIN_NAME } from './constants.ts'
-
-/** Where the plugin keeps its venv and logs (per-user, versioned). */
-function pluginHome(): string {
-  return join(homedir(), '.dsh-headroom')
-}
-
-function venvDir(): string {
-  return join(pluginHome(), 'venv')
-}
-
-function proxyLogPath(): string {
-  return join(pluginHome(), 'proxy.log')
-}
-
-function startupLogPath(): string {
-  return join(pluginHome(), 'startup.log')
-}
-
-/** Names of the venv binaries across platforms. */
-function venvPython(): string {
-  return process.platform === 'win32' ? join(venvDir(), 'Scripts', 'python.exe') : join(venvDir(), 'bin', 'python')
-}
-
-function venvHeadroom(): string {
-  return process.platform === 'win32' ? join(venvDir(), 'Scripts', 'headroom.exe') : join(venvDir(), 'bin', 'headroom')
-}
 
 /** Resolve a usable system Python (python3 / python / py launcher). */
 function findSystemPython(): Promise<string | undefined> {
@@ -131,7 +107,7 @@ export async function ensureInstalled(log: (message: string) => void): Promise<{
     process.platform === 'win32'
       ? [systemPython, '-m', 'venv', venvDir()]
       : [...systemPython.split(' '), '-m', 'venv', venvDir()],
-    join(pluginHome(), 'venv-create.log'),
+    venvCreateLogPath(),
   )
   if (createCode !== 0) {
     return { ok: false, message: `Failed to create venv (exit ${createCode}). See ~/.dsh-headroom/venv-create.log` }
@@ -141,7 +117,7 @@ export async function ensureInstalled(log: (message: string) => void): Promise<{
   const pip = process.platform === 'win32'
     ? [venvPython(), '-m', 'pip', 'install', '--disable-pip-version-check', 'headroom-ai[proxy]']
     : [venvPython(), '-m', 'pip', 'install', '--disable-pip-version-check', 'headroom-ai[proxy]']
-  const installCode = await run(pip, join(pluginHome(), 'install.log'))
+  const installCode = await run(pip, installLogPath())
   if (installCode !== 0) {
     return { ok: false, message: 'pip install headroom-ai[proxy] failed. See ~/.dsh-headroom/install.log. On Windows, Rust/MSVC may be required (README).' }
   }
@@ -176,15 +152,7 @@ export async function startProxy(log: (message: string) => void): Promise<{ ok: 
     const child = spawn(venvHeadroom(), args, {
       detached: true,
       stdio: 'ignore',
-      env: {
-        ...process.env,
-        HEADROOM_DETECT_BACKEND: 'python', // avoid Windows detect_content_type deadlock
-        HEADROOM_TOOL_SEARCH: 'off',       // DeepSeek does not know the Anthropic tool_search type
-        // Kompress ONNX model never finished downloading on this machine (0-byte
-        // .incomplete blob in the HF cache); proxy hangs in pre-load without this.
-        // See routes.ts HEADROOM_ENV for the full note.
-        HEADROOM_DISABLE_KOMPRESS: '1',
-      },
+      env: { ...process.env, ...HEADROOM_ENV },
     })
     child.unref()
     writeFileSync(startupLogPath(), `${new Date().toISOString()} spawned headroom proxy pid=${child.pid}\n`, { flag: 'a' })

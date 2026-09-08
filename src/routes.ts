@@ -18,11 +18,9 @@
  * page cannot start or kill processes through the user's browser (CSRF).
  */
 import { spawn, exec } from 'node:child_process'
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 // Empty type-only import: pulls in the @deepseek-ai/dsh-settings ambient
 // declarations (ctx.settings.get/mutate) without a runtime dependency.
@@ -41,73 +39,18 @@ import {
   MGR_STOP_PATH,
   routeOf,
 } from './constants.ts'
-
-/** Mirrors startProxy() env (src/index.ts) so the panel matches /headroom-start. */
-const HEADROOM_ENV = {
-  HEADROOM_DETECT_BACKEND: 'python',
-  HEADROOM_TOOL_SEARCH: 'off',
-  // The Kompress ONNX model (chopratejas/kompress-base) has never completed
-  // downloading on this machine (HF cache holds a 0-byte .incomplete blob);
-  // proxy startup hangs forever in "Pre-loading compressors and parsers..."
-  // trying to fetch it. Skip Kompress so the proxy binds the port; TEXT/CODE
-  // compression still works. Remove once the model is cached
-  // (set HF_ENDPOINT=https://hf-mirror.com and start without this flag).
-  HEADROOM_DISABLE_KOMPRESS: '1',
-}
-/** Plugin-managed venv (keep in sync with pluginHome()/venvHeadroom() in src/index.ts). */
-const PLUGIN_HOME = join(homedir(), '.dsh-headroom')
-
-/**
- * Sidecar holding the `llm-deepseek.baseURL` value the user had before
- * switching to the Headroom route. Written only when that value selects the
- * third-party route per the shared `routeOf` (blank and official DeepSeek
- * spellings count as direct); read back and deleted when switching to direct.
- */
-const SAVED_BASEURL_PATH = join(PLUGIN_HOME, 'saved-baseurl')
-
-/** The headroom.exe the plugin installs into its own venv. */
-function venvHeadroomExe(): string {
-  return process.platform === 'win32'
-    ? join(PLUGIN_HOME, 'venv', 'Scripts', 'headroom.exe')
-    : join(PLUGIN_HOME, 'venv', 'bin', 'headroom')
-}
-
-function proxyLogPath(): string {
-  return join(PLUGIN_HOME, 'proxy.log')
-}
+import {
+  deleteSavedBaseURL,
+  HEADROOM_ENV,
+  proxyLogPath,
+  readSavedBaseURL,
+  venvHeadroom,
+  writeSavedBaseURL,
+} from './paths.ts'
 
 /** True when a baseURL selects the third-party route (shared `routeOf`). */
 function isThirdPartyBaseURL(baseURL: unknown): baseURL is string {
   return typeof baseURL === 'string' && routeOf(baseURL) === 'third-party'
-}
-
-/** Read the saved third-party baseURL; undefined when absent or empty. */
-function readSavedBaseURL(): string | undefined {
-  try {
-    if (!existsSync(SAVED_BASEURL_PATH)) return undefined
-    const value = readFileSync(SAVED_BASEURL_PATH, 'utf8').trim()
-    return value.length > 0 ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function writeSavedBaseURL(baseURL: string): void {
-  writeFileSync(SAVED_BASEURL_PATH, baseURL, 'utf8')
-}
-
-/**
- * Remove the sidecar. Returns false only when the file exists but could not
- * be removed (ENOENT counts as success), so callers can surface a stale
- * sidecar instead of silently keeping it.
- */
-function deleteSavedBaseURL(): boolean {
-  try {
-    unlinkSync(SAVED_BASEURL_PATH)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
-  }
 }
 
 /** Read the current `llm-deepseek` resolved section's baseURL. */
@@ -259,7 +202,7 @@ export function mountManagerRoutes(ctx: Context): () => void {
       running,
       version: livez?.version,
       pid,
-      exe: venvHeadroomExe(),
+      exe: venvHeadroom(),
       port: HEADROOM_PORT,
       savings: savings ?? null,
       savedBaseURL: readSavedBaseURL() ?? null,
@@ -362,7 +305,9 @@ export function mountManagerRoutes(ctx: Context): () => void {
         }
         try {
           // Target: the plugin-venv headroom.exe with the same args/env as
-          // startProxy() (src/index.ts). Two earlier launch strategies failed:
+          // startProxy() (src/index.ts) — both launch entries take the paths
+          // and env preset from the shared module (src/paths.ts). Two earlier
+          // launch strategies failed:
           //  - `%USERPROFILE%\.headroom\start-headroom.vbs` was a leftover from
           //    the author's machine and never exists on fresh installs.
           //  - `cmd /c start "" wscript/exe...` creates the process but it hangs
@@ -372,7 +317,7 @@ export function mountManagerRoutes(ctx: Context): () => void {
           // Trade-off: a plain detached child dies with the dsh host process
           // tree (Windows job object semantics) — restart the proxy after a
           // host crash.
-          const exe = venvHeadroomExe()
+          const exe = venvHeadroom()
           if (!existsSync(exe)) {
             sendJson(response, 409, { ok: false, error: 'headroom not installed; run /headroom-install' })
             return
