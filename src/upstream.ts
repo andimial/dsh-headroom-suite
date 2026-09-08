@@ -23,17 +23,22 @@ export type UpstreamKind = 'official' | 'third-party'
 
 /**
  * Shared environment preset group (环境预设组) handed to the spawned proxy
- * process, identical for both upstream kinds. Single definition — the spawn
- * sites and src/paths.ts drop their local copies in favour of this one when
- * they wire the resolver in (issue #5).
+ * process, identical for both upstream kinds. Single definition — both spawn
+ * entries consume it through buildProxySpawnPlan (src/spawn.ts, issue #5);
+ * the former HEADROOM_ENV copy in src/paths.ts is gone.
+ *  - DETECT_BACKEND: avoid the Windows detect_content_type deadlock.
+ *  - TOOL_SEARCH: DeepSeek does not know the Anthropic tool_search type.
+ *  - DISABLE_KOMPRESS: the Kompress ONNX model (chopratejas/kompress-base)
+ *    never completed downloading on the author's machine (HF cache holds a
+ *    0-byte .incomplete blob); proxy startup hangs forever in "Pre-loading
+ *    compressors and parsers..." trying to fetch it. Skip Kompress so the
+ *    proxy binds the port; TEXT/CODE compression still works. Remove once the
+ *    model is cached (set HF_ENDPOINT=https://hf-mirror.com and start without
+ *    this flag).
  */
 export const HEADROOM_ENV_PRESET: Readonly<Record<string, string>> = {
-  // avoid Windows detect_content_type deadlock
   HEADROOM_DETECT_BACKEND: 'python',
-  // DeepSeek does not know the Anthropic tool_search type
   HEADROOM_TOOL_SEARCH: 'off',
-  // Kompress ONNX model never finished downloading on the author's machine
-  // (proxy hangs in pre-load); see routes.ts HEADROOM_ENV for the full note.
   HEADROOM_DISABLE_KOMPRESS: '1',
 }
 

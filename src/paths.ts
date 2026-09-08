@@ -1,9 +1,10 @@
 /**
- * Single home for the launch-related paths, spawn env preset, and
- * saved-baseURL sidecar access. Both launch entries — the command channel
- * (startProxy() in src/index.ts) and the panel management routes
- * (POST /headroom-mgr/start in src/routes.ts) — import from here instead of
- * keeping mirrored copies synced by comments.
+ * Single home for the launch-related paths and saved-baseURL sidecar access.
+ * Both launch entries — the command channel (startProxy() in src/index.ts)
+ * and the panel management routes (POST /headroom-mgr/start in src/routes.ts)
+ * — import from here instead of keeping mirrored copies synced by comments.
+ * The spawn env preset itself lives with the resolver (HEADROOM_ENV_PRESET in
+ * src/upstream.ts); argv/env assembly is buildProxySpawnPlan in src/spawn.ts.
  *
  * Host half only: imports node:fs/os/path, so the browser bundle (which
  * imports only ./constants.ts) must never reach this module.
@@ -36,9 +37,20 @@ export function proxyLogPath(): string {
   return join(pluginHome(), 'proxy.log')
 }
 
-/** Append-only record of command-channel proxy spawns. */
+/** Append-only record of proxy spawns (both launch entries), each line
+ * carrying the upstream resolved at the start instant. */
 export function startupLogPath(): string {
   return join(pluginHome(), 'startup.log')
+}
+
+/**
+ * Append one pre-formatted startup-log line (best-effort: spawn reporting
+ * must not fail because the log file is unwritable).
+ */
+export function appendStartupLog(line: string): void {
+  try {
+    writeFileSync(startupLogPath(), line, { flag: 'a' })
+  } catch { /* log best-effort */ }
 }
 
 /** venv creation output log inside plugin home (referenced in error copy). */
@@ -49,23 +61,6 @@ export function venvCreateLogPath(): string {
 /** pip install output log inside plugin home (referenced in error copy). */
 export function installLogPath(): string {
   return join(pluginHome(), 'install.log')
-}
-
-/**
- * Shared proxy spawn env preset, identical for both launch entries.
- *  - DETECT_BACKEND/TOKEN_SEARCH: the Windows detect_content_type deadlock and
- *    DeepSeek not knowing the Anthropic tool_search type.
- *  - DISABLE_KOMPRESS: the Kompress ONNX model (chopratejas/kompress-base) has
- *    never completed downloading on this machine (HF cache holds a 0-byte
- *    .incomplete blob); proxy startup hangs forever in "Pre-loading compressors
- *    and parsers..." trying to fetch it. Skip Kompress so the proxy binds the
- *    port; TEXT/CODE compression still works. Remove once the model is cached
- *    (set HF_ENDPOINT=https://hf-mirror.com and start without this flag).
- */
-export const HEADROOM_ENV = {
-  HEADROOM_DETECT_BACKEND: 'python',
-  HEADROOM_TOOL_SEARCH: 'off',
-  HEADROOM_DISABLE_KOMPRESS: '1',
 }
 
 /**

@@ -15,14 +15,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
 import { spawn, execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { HEADROOM_PORT } from './constants.ts'
 import {
-  DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL, HEADROOM_BASE_URL, HEADROOM_PORT,
-} from './constants.ts'
-import {
-  HEADROOM_ENV, installLogPath, pluginHome, proxyLogPath, startupLogPath,
-  venvCreateLogPath, venvDir, venvHeadroom, venvPython,
+  appendStartupLog, installLogPath, pluginHome, proxyLogPath,
+  readSavedBaseURL, venvCreateLogPath, venvDir, venvHeadroom, venvPython,
 } from './paths.ts'
 import { mountManagerRoutes } from './routes.ts'
+import { buildProxySpawnPlan, formatUpstream, readSettingsBaseURL, startupLogLine } from './spawn.ts'
+import type { UpstreamSummary } from './spawn.ts'
+import { resolveExpectedUpstream } from './upstream.ts'
 
 export { DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL, DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL, HEADROOM_PORT, LLM_DEEPSEEK_NAMESPACE, PLUGIN_NAME } from './constants.ts'
 
@@ -126,10 +127,18 @@ export async function ensureInstalled(log: (message: string) => void): Promise<{
 
 /**
  * Start the Headroom proxy detached from this process, with the DeepSeek
- * compatibility presets. Returns the spawn outcome (the proxy needs a few
- * seconds to become healthy).
+ * compatibility presets. The expected upstream (期望上游) is derived once,
+ * right before the spawn: getBaseURL() is called only after the
+ * install/health preflight so it reflects the `llm-deepseek` state of the
+ * start instant; the saved third-party address (保存文件) is read alongside
+ * it. A proxy that is already running is never re-targeted. Returns the
+ * spawn outcome (the proxy needs a few seconds to become healthy) plus the
+ * resolved upstream.
  */
-export async function startProxy(log: (message: string) => void): Promise<{ ok: boolean; message: string }> {
+export async function startProxy(
+  log: (message: string) => void,
+  getBaseURL: () => string | undefined,
+): Promise<{ ok: boolean; message: string; upstream?: UpstreamSummary }> {
   if (!venvReady()) {
     const installed = await ensureInstalled(log)
     if (!installed.ok) return installed
@@ -138,33 +147,34 @@ export async function startProxy(log: (message: string) => void): Promise<{ ok: 
   const health = await probeHealth(1500)
   if (health.healthy) return { ok: true, message: 'Headroom already running.' }
 
-  const args = [
-    'proxy',
-    '--port', String(HEADROOM_PORT),
-    '--anthropic-api-url', DEEPSEEK_ANTHROPIC_URL,
-    '--openai-api-url', DEEPSEEK_OPENAI_URL,
-    '--host', '127.0.0.1',
-    '--connect-timeout-seconds', '15',
-    '--request-timeout-seconds', '120',
-    '--log-file', proxyLogPath(),
-  ]
+  const plan = buildProxySpawnPlan(resolveExpectedUpstream(getBaseURL(), readSavedBaseURL()), proxyLogPath())
   try {
-    const child = spawn(venvHeadroom(), args, {
+    const child = spawn(venvHeadroom(), [...plan.args], {
       detached: true,
       stdio: 'ignore',
-      env: { ...process.env, ...HEADROOM_ENV },
+      env: plan.env,
     })
     child.unref()
-    writeFileSync(startupLogPath(), `${new Date().toISOString()} spawned headroom proxy pid=${child.pid}\n`, { flag: 'a' })
-    log(`Headroom proxy starting (pid ${child.pid}). Waiting for health...`)
+    appendStartupLog(startupLogLine(plan, child.pid))
+    log(`Headroom proxy starting (pid ${child.pid}, ${formatUpstream(plan.upstream)}). Waiting for health...`)
     // Cold start loads transformers/tokenizers from a cold venv — measured
     // ~50-90s on this machine; poll up to 120s.
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 1000))
       const now = await probeHealth(1500)
-      if (now.healthy) return { ok: true, message: `Headroom healthy (v${now.version ?? '?'}).` }
+      if (now.healthy) {
+        return {
+          ok: true,
+          message: `Headroom healthy (v${now.version ?? '?'}). ${formatUpstream(plan.upstream)}.`,
+          upstream: plan.upstream,
+        }
+      }
     }
-    return { ok: true, message: 'Headroom process started; health check still warming up (cold start).' }
+    return {
+      ok: true,
+      message: `Headroom process started; health check still warming up (cold start). ${formatUpstream(plan.upstream)}.`,
+      upstream: plan.upstream,
+    }
   } catch (error) {
     return { ok: false, message: `Failed to start Headroom: ${error instanceof Error ? error.message : String(error)}` }
   }
@@ -260,7 +270,7 @@ export function apply(ctx: Context): void {
       name: 'headroom-start',
       description: 'Start the Headroom compression proxy (with DeepSeek compatibility presets)',
       handler: async () => {
-        const result = await startProxy(log)
+        const result = await startProxy(log, () => readSettingsBaseURL(ctx))
         return { kind: result.ok ? 'success' : 'error', text: result.message }
       },
     })

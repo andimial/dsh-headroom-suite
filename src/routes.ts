@@ -26,8 +26,6 @@ import type { Context } from '@deepseek-ai/cordis'
 // declarations (ctx.settings.get/mutate) without a runtime dependency.
 import type {} from '@deepseek-ai/dsh-settings'
 import {
-  DEEPSEEK_ANTHROPIC_URL,
-  DEEPSEEK_OPENAI_URL,
   HEADROOM_BASE_URL,
   HEADROOM_LIVEZ_URL,
   HEADROOM_PORT,
@@ -40,23 +38,19 @@ import {
   routeOf,
 } from './constants.ts'
 import {
+  appendStartupLog,
   deleteSavedBaseURL,
-  HEADROOM_ENV,
   proxyLogPath,
   readSavedBaseURL,
   venvHeadroom,
   writeSavedBaseURL,
 } from './paths.ts'
+import { buildProxySpawnPlan, readSettingsBaseURL, startupLogLine } from './spawn.ts'
+import { resolveExpectedUpstream } from './upstream.ts'
 
 /** True when a baseURL selects the third-party route (shared `routeOf`). */
 function isThirdPartyBaseURL(baseURL: unknown): baseURL is string {
   return typeof baseURL === 'string' && routeOf(baseURL) === 'third-party'
-}
-
-/** Read the current `llm-deepseek` resolved section's baseURL. */
-function readSettingsBaseURL(ctx: Context): string | undefined {
-  const section = ctx.settings.get(LLM_DEEPSEEK_NAMESPACE) as { baseURL?: unknown } | undefined
-  return typeof section?.baseURL === 'string' ? section.baseURL : undefined
 }
 
 interface SavingsLifetime {
@@ -304,10 +298,10 @@ export function mountManagerRoutes(ctx: Context): () => void {
           return
         }
         try {
-          // Target: the plugin-venv headroom.exe with the same args/env as
-          // startProxy() (src/index.ts) — both launch entries take the paths
-          // and env preset from the shared module (src/paths.ts). Two earlier
-          // launch strategies failed:
+          // Target: the plugin-venv headroom.exe with the spawn plan built by
+          // the shared constructor (src/spawn.ts) from the upstream resolved
+          // at this start instant — the same resolution + plan as startProxy()
+          // (src/index.ts). Two earlier launch strategies failed:
           //  - `%USERPROFILE%\.headroom\start-headroom.vbs` was a leftover from
           //    the author's machine and never exists on fresh installs.
           //  - `cmd /c start "" wscript/exe...` creates the process but it hangs
@@ -322,22 +316,17 @@ export function mountManagerRoutes(ctx: Context): () => void {
             sendJson(response, 409, { ok: false, error: 'headroom not installed; run /headroom-install' })
             return
           }
-          const startArgs = [
-            'proxy',
-            '--port', String(HEADROOM_PORT),
-            '--anthropic-api-url', DEEPSEEK_ANTHROPIC_URL,
-            '--openai-api-url', DEEPSEEK_OPENAI_URL,
-            '--host', '127.0.0.1',
-            '--connect-timeout-seconds', '15',
-            '--request-timeout-seconds', '120',
-            '--log-file', proxyLogPath(),
-          ]
-          const child = spawn(exe, startArgs, {
+          const plan = buildProxySpawnPlan(
+            resolveExpectedUpstream(readSettingsBaseURL(ctx), readSavedBaseURL()),
+            proxyLogPath(),
+          )
+          const child = spawn(exe, [...plan.args], {
             detached: true,
             stdio: 'ignore',
-            env: { ...process.env, ...HEADROOM_ENV },
+            env: plan.env,
           })
           child.unref()
+          appendStartupLog(startupLogLine(plan, child.pid))
           // give the proxy a moment to bind before reporting: cold start loads
           // transformers/tokenizers from a cold venv (~50-90s on this machine,
           // measured); poll up to 120s before reporting not-ready.
@@ -351,6 +340,7 @@ export function mountManagerRoutes(ctx: Context): () => void {
           sendJson(response, 200, {
             ok: true,
             healthyAfterStart: live !== undefined,
+            upstream: plan.upstream,
           })
         } catch (err) {
           sendJson(response, 500, { error: String(err) })
