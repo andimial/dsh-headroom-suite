@@ -11,12 +11,13 @@
  */
 import { createServer } from 'node:http'
 import { appendFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { EVIDENCE_DIR } from './lib.mjs'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const logOpenAI = join(here, 'mock-requests.jsonl')
-const logPort9 = join(here, 'placeholder-port9.jsonl')
+// 记录落盘到证据目录（原位复现提交的证据）。
+mkdirSync(EVIDENCE_DIR, { recursive: true })
+const logOpenAI = join(EVIDENCE_DIR, 'mock-requests.jsonl')
+const logPort9 = join(EVIDENCE_DIR, 'placeholder-port9.jsonl')
 
 function record(file, entry) {
   appendFileSync(file, JSON.stringify(entry) + '\n', 'utf8')

@@ -2,3 +2,4 @@ node_modules/
 *.log
 .scratch/
 data-gym-cache/
+/.codegraph

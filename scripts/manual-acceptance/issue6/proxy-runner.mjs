@@ -1,35 +1,28 @@
 /**
- * Issue #6 受控代理 runner：以与 buildProxySpawnPlan 逐字一致的 argv spawn
- * headroom 引擎并常驻（后台 job），stdout/stderr 落盘供取证。
+ * Issue #6 受控代理 runner：argv 由 src/spawn.ts 的 buildProxySpawnPlan 产出
+ * （与两处启动入口完全同源），并常驻供清单验收打流量。
  * 用法：node proxy-runner.mjs third-party|official
- * 仅修正代理进程的 no_proxy（本机环境 `::1,[::1]` 触发 httpx 崩溃 → 另行开票）。
+ * 仅修正代理进程的 no_proxy（本机 host 值触发引擎启动崩溃 → issue #7）。
  */
 import { spawn } from 'node:child_process'
-import { homedir } from 'node:os'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawnPlanFor, controlledProxyEnv, pluginHomePath, EVIDENCE_DIR } from './lib.mjs'
 
 const mode = process.argv[2] ?? 'third-party'
-const targets = mode === 'official'
-  ? { anthropic: 'https://api.deepseek.com/anthropic', openai: 'https://api.deepseek.com' }
-  : { anthropic: 'http://127.0.0.1:9', openai: 'http://127.0.0.1:18081' }
+const plan = spawnPlanFor(mode)
 
-const argv = [
-  'proxy', '--port', '8787',
-  '--anthropic-api-url', targets.anthropic,
-  '--openai-api-url', targets.openai,
-  '--host', '127.0.0.1',
-  '--connect-timeout-seconds', '15',
-  '--request-timeout-seconds', '120',
-  '--log-file', join(homedir(), '.dsh-headroom', 'proxy.log'),
-]
-const env = {
-  ...process.env,
-  HEADROOM_DETECT_BACKEND: 'python',
-  HEADROOM_TOOL_SEARCH: 'off',
-  HEADROOM_DISABLE_KOMPRESS: '1',
-  no_proxy: 'localhost,127.0.0.1',
-  NO_PROXY: 'localhost,127.0.0.1',
-}
-// 沙箱边界：spawn 捕获 stdio 会 EPERM，只能 ignore；取证靠引擎 --log-file 与 /stats。
-const child = spawn(join(homedir(), '.dsh-headroom', 'venv', 'Scripts', 'headroom.exe'), argv, { env, stdio: 'ignore' })
-setInterval(() => {}, 1 << 30) // 常驻
+// 取证：实际使用的决议摘要与 argv 记到证据目录（原位复现）。
+appendFileSync(join(EVIDENCE_DIR, 'runner-spawns.jsonl'), JSON.stringify({
+  ts: new Date().toISOString(), mode, upstream: plan.upstream, args: plan.args,
+}) + '\n', 'utf8')
+console.log(`[runner] mode=${mode} upstream=${JSON.stringify(plan.upstream)}`)
+console.log(`[runner] argv=${JSON.stringify(plan.args)}`)
+
+const child = spawn(join(pluginHomePath('venv'), 'Scripts', 'headroom.exe'), [...plan.args], {
+  // 沙箱边界：spawn 捕获 stdio 会 EPERM，只能 ignore；取证靠 /stats 与 runner-spawns.jsonl。
+  env: controlledProxyEnv(plan.env),
+  stdio: 'ignore',
+})
+child.on('exit', (code, signal) => console.log(`[runner] engine exit code=${code} signal=${signal}`))
+setInterval(() => {}, 1 << 30) // 常驻（后台 job 承载）

@@ -3,52 +3,31 @@
  * 链路：停代理 → 删保存文件（模拟无第三方保存文件）→ direct（unset baseURL）
  * → headroom（压缩线路、保存文件空）→ start → 决议应=official（DeepSeek 双端点）。
  * 引擎运行态（livez/stats-history）由受控 runner official 模式另行取证
- * （本机 host 环境坏 no_proxy 会让路由 spawn 的引擎崩溃 → 另开新票）。
+ * （本机 host 环境坏 no_proxy 会让路由 spawn 的引擎崩溃 → issue #7）。
  */
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { unlinkSync } from 'node:fs'
+import { createRecorder, postHost, pluginHomePath, tail } from './lib.mjs'
 
-const here = new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
-const HOST = 'http://127.0.0.1:3080'
-const PROXY = 'http://127.0.0.1:8787'
-const sidecar = join(homedir(), '.dsh-headroom', 'saved-baseurl')
-const evidence = { steps: [], t0: new Date().toISOString() }
-const step = (name, data) => {
-  evidence.steps.push({ name, at: new Date().toISOString(), data })
-  console.log(`[step] ${name}: ${JSON.stringify(data).slice(0, 500)}`)
-}
+const recorder = createRecorder('checklist3-route-result.json')
+const { step } = recorder
 
-async function post(path, body) {
-  const response = await fetch(HOST + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', origin: HOST, host: new URL(HOST).host },
-    body: JSON.stringify(body ?? {}),
-  })
-  return { status: response.status, body: await response.json().catch(() => null) }
-}
+step('stop-proxy', await postHost('/headroom-mgr/stop', {}))
 
-step('stop-proxy', await post('/headroom-mgr/stop', {}))
-
+// 删保存文件 = 模拟「没有第三方保存文件」的用户状态（保存文件由插件管理，属验收操作面）
+const sidecar = pluginHomePath('saved-baseurl')
 try { unlinkSync(sidecar); step('delete-sidecar', { removed: true }) }
-catch (e) { step('delete-sidecar', { removed: false, code: e?.code }) }
+catch (error) { step('delete-sidecar', { removed: false, code: error?.code }) }
 
-step('route-direct', await post('/headroom-mgr/route', { target: 'direct' }))
-step('route-headroom', await post('/headroom-mgr/route', { target: 'headroom' }))
+step('route-direct', await postHost('/headroom-mgr/route', { target: 'direct' }))
+step('route-headroom', await postHost('/headroom-mgr/route', { target: 'headroom' }))
 
 const startAt = Date.now()
-const start = await post('/headroom-mgr/start', {})
+const start = await postHost('/headroom-mgr/start', {})
 step('start-official', { ...start, waitedMs: Date.now() - startAt })
 
-// alreadyRunning 观察：立即再点一次
-step('start-again-alreadyRunning', await post('/headroom-mgr/start', {}))
+// alreadyRunning 观察：立即再点一次（引擎未 bind 时会再次决议+spawn，见证据注释）
+step('start-again', await postHost('/headroom-mgr/start', {}))
 
-const tail = (file, max = 1600) => {
-  try { const t = readFileSync(file, 'utf8'); return t.length > max ? t.slice(-max) : t }
-  catch (e) { return `(unreadable: ${String(e).slice(0, 90)})` }
-}
-step('startup-log-tail', { text: tail(join(homedir(), '.dsh-headroom', 'startup.log'), 900) })
-step('sidecar-state', { exists: (() => { try { return readFileSync(sidecar, 'utf8') } catch { return null } })() })
+step('startup-log-tail', { text: tail(pluginHomePath('startup.log'), 900) })
 
-writeFileSync(join(here, 'checklist3-route-result.json'), JSON.stringify(evidence, null, 2))
-console.log('[done] -> checklist3-route-result.json')
+recorder.save()
