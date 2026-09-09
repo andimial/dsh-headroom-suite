@@ -1,0 +1,83 @@
+{
+  "steps": [
+    {
+      "name": "c1-chat-again",
+      "at": "2026-09-09T08:02:26.434Z",
+      "data": {
+        "requestBytes": 50614,
+        "status": 200,
+        "hasMockMark": true,
+        "bodyHead": "{\"id\":\"chatcmpl-mock-e2e\",\"object\":\"chat.completion\",\"created\":1788940945,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"[mock-e2e] third-party upstream reached"
+      }
+    },
+    {
+      "name": "c2-post-v1-messages",
+      "at": "2026-09-09T08:02:40.105Z",
+      "data": {
+        "status": 502,
+        "bodyHead": "{\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"An error occurred while processing your request. Please try again.\"}}"
+      }
+    },
+    {
+      "name": "stats-after-requests",
+      "at": "2026-09-09T08:02:42.155Z",
+      "data": {
+        "summary": {
+          "mode": "cache",
+          "api_requests": 1,
+          "primary_model": "deepseek-chat",
+          "compression": {
+            "requests_compressed": 1,
+            "avg_compression_pct": 82.7,
+            "best_compression_pct": 82.7,
+            "best_detail": "4,224 → 729 tokens",
+            "total_tokens_removed": 3495,
+            "total_tokens_before": 3496,
+            "tool_schema_tokens_saved": 0,
+            "total_tokens_saved_all_layers": 3495
+          },
+          "uncompressed_requests": {},
+          "cost": {
+            "without_headroom_usd": 0,
+            "with_headroom_usd": 0,
+            "total_saved_usd": 0,
+            "savings_pct": 0,
+            "breakdown": {
+              "cache_savings_usd": 0,
+              "compression_savings_usd": 0
+            }
+          },
+          "mcp": {
+            "compressions": 0,
+            "tokens_removed": 0,
+            "retrievals": 0
+          }
+        },
+        "requests": {
+          "total": 1,
+          "cached": 0,
+          "rate_limited": 0,
+          "failed": 1,
+          "by_provider": {
+            "openai": 1
+          },
+          "by_model": {
+            "deepseek-chat": 1
+          },
+          "by_stack": {}
+        },
+        "statsFull": "{\"summary\":{\"mode\":\"cache\",\"api_requests\":1,\"primary_model\":\"deepseek-chat\",\"compression\":{\"requests_compressed\":1,\"avg_compression_pct\":82.7,\"best_compression_pct\":82.7,\"best_detail\":\"4,224 → 729 tokens\",\"total_tokens_removed\":3495,\"total_tokens_before\":3496,\"tool_schema_tokens_saved\":0,\"total_tokens_saved_all_layers\":3495},\"uncompressed_requests\":{},\"cost\":{\"without_headroom_usd\":0,\"with_headroom_usd\":0,\"total_saved_usd\":0,\"savings_pct\":0,\"breakdown\":{\"cache_savings_usd\":0,\"compression_savings_usd\":0}},\"mcp\":{\"compressions\":0,\"tokens_removed\":0,\"retrievals\":0}},\"agent_usage\":{\"agents\":[{\"agent\":\"openai\",\"label\":\"OpenAI\",\"source\":\"provider\",\"requests\":1,\"before_tokens\":4224,\"after_tokens\":729,\"output_tokens\":9,\"tokens_saved\":3495,\"models\":{\"deepseek-chat\":1},\"providers\":{\"openai\":1},\"has_exact_tokens\":true,\"savings_percent\":82.74,\"after_percent\":17.26,\"share_of_saved_percent\":100,\"share_of_requests_percent\":100}],\"totals\":{\"requests\":1,\"before_tokens\":3496,\"after_tokens\":1,\"output_tokens\":9,\"tokens_saved\":3495,\"savings_percent\":99.97},\"coverage\":{\"logged_requests\":1,\"exact_token_rows\":1,\"mode\":\"request_logs\"}},\"savings\":{\"total_tokens\":3495,\"per_project\":{},\"by_source\":[],\"by_layer\":{\"compression\":{\"tokens\":3495,\"proxy_tokens\":3495,\"all_layers_tokens\":3495,\"description\":\"Tokens removed by Headroom proxy compression.\"},\"prefix_cache\":{\"discount_usd\":0,\"description\":\"Cost discount from provider prefix caching. Headroom's CacheAligner improves hit rates; baseline caching is provider-native.\"},\"output_shaping\":{\"available\":false,\"description\":\"OUTPUT tokens the model didn't em"
+      }
+    },
+    {
+      "name": "evidence",
+      "at": "2026-09-09T08:02:42.157Z",
+      "data": {
+        "mockRequestsTail": "l\":\"/v1/chat/completions\",\"authPresent\":true,\"authPrefix\":\"Bearer sk-mo\",\"contentType\":\"application/json\",\"bodyBytes\":8667,\"bodySnippet\":\"{\\\"model\\\":\\\"deepseek-chat\\\",\\\"stream\\\":true,\\\"messages\\\":[{\\\"role\\\":\\\"system\\\",\\\"content\\\":\\\"你是用于手册验收的回声助手。\\\"},{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"请忽略以下填充文本并只回复 OK。\\\\n压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压…(+2211B)\"}\n{\"ts\":\"2026-09-09T08:02:25.889Z\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"authPresent\":true,\"authPrefix\":\"Bearer sk-mo\",\"contentType\":\"application/json\",\"bodyBytes\":8628,\"bodySnippet\":\"{\\\"model\\\":\\\"deepseek-chat\\\",\\\"stream\\\":false,\\\"messages\\\":[{\\\"role\\\":\\\"system\\\",\\\"content\\\":\\\"你是用于手册验收的回声助手。\\\"},{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"请忽略以下填充文本并只回复 OK。\\\\n压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。压缩验收段落。…(+2172B)\"}\n",
+        "placeholderPort9Tail": "{\"ts\":\"2026-09-09T03:31:47.426Z\",\"method\":\"POST\",\"url\":\"/v1/messages\",\"authPresent\":false,\"authPrefix\":\"\",\"host\":\"127.0.0.1:9\",\"bodyBytes\":2,\"bodySnippet\":\"{}\"}\n{\"ts\":\"2026-09-09T07:56:14.837Z\",\"method\":\"HEAD\",\"url\":\"/\",\"authPresent\":false,\"authPrefix\":\"\",\"host\":\"127.0.0.1:9\",\"bodyBytes\":0,\"bodySnippet\":\"\"}\n{\"ts\":\"2026-09-09T08:02:36.519Z\",\"method\":\"POST\",\"url\":\"/v1/messages\",\"authPresent\":false,\"authPrefix\":\"\",\"host\":\"127.0.0.1:9\",\"bodyBytes\":116,\"bodySnippet\":\"{\\\"model\\\":\\\"claude-sonnet-4-5-20250929\\\",\\\"max_tokens\\\":64,\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"ping via claude code\\\"}]}\"}\n{\"ts\":\"2026-09-09T08:02:37.358Z\",\"method\":\"POST\",\"url\":\"/v1/messages\",\"authPresent\":false,\"authPrefix\":\"\",\"host\":\"127.0.0.1:9\",\"bodyBytes\":116,\"bodySnippet\":\"{\\\"model\\\":\\\"claude-sonnet-4-5-20250929\\\",\\\"max_tokens\\\":64,\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"ping via claude code\\\"}]}\"}\n{\"ts\":\"2026-09-09T08:02:40.102Z\",\"method\":\"POST\",\"url\":\"/v1/messages\",\"authPresent\":false,\"authPrefix\":\"\",\"host\":\"127.0.0.1:9\",\"bodyBytes\":116,\"bodySnippet\":\"{\\\"model\\\":\\\"claude-sonnet-4-5-20250929\\\",\\\"max_tokens\\\":64,\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"ping via claude code\\\"}]}\"}\n",
+        "proxyLogTail": "(unreadable: Error: ENOENT: no such file or directory, open 'C:\\Users\\Administrator\\.dsh-headroom\\proxy)"
+      }
+    }
+  ],
+  "t0": "2026-09-09T08:02:17.426Z"
+}

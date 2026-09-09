@@ -1,0 +1,74 @@
+{
+  "steps": [
+    {
+      "name": "1-record-third-party",
+      "at": "2026-09-09T03:32:37.462Z",
+      "data": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "baseURL": "http://127.0.0.1:18081",
+          "sidecarCleanupFailed": false
+        }
+      }
+    },
+    {
+      "name": "2-switch-headroom",
+      "at": "2026-09-09T03:32:37.898Z",
+      "data": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "savedBaseURL": "http://127.0.0.1:18081",
+          "sidecarCleanupFailed": false
+        }
+      }
+    },
+    {
+      "name": "3-start-proxy",
+      "at": "2026-09-09T03:34:39.736Z",
+      "data": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "healthyAfterStart": false,
+          "upstream": {
+            "kind": "third-party",
+            "openaiApiUrl": "http://127.0.0.1:18081",
+            "anthropicApiUrl": "http://127.0.0.1:9"
+          }
+        },
+        "waitedMs": 121838
+      }
+    },
+    {
+      "name": "4-chat-via-proxy",
+      "at": "2026-09-09T03:34:39.741Z",
+      "data": {
+        "requestBytes": 50613,
+        "threw": "TypeError: fetch failed",
+        "latencyMs": 5
+      }
+    },
+    {
+      "name": "5-proxy-health-stats",
+      "at": "2026-09-09T03:34:39.746Z",
+      "data": {
+        "livez": "TypeError: fetch failed",
+        "statsHead": "\"TypeError: fetch failed\"",
+        "historyLifetime": null
+      }
+    },
+    {
+      "name": "6-evidence",
+      "at": "2026-09-09T03:34:39.748Z",
+      "data": {
+        "mockRequestsTail": "{\"ts\":\"2026-09-09T03:31:47.274Z\",\"method\":\"GET\",\"url\":\"/v1/models\",\"authPresent\":false,\"authPrefix\":\"\",\"contentType\":null,\"bodyBytes\":0,\"bodySnippet\":\"\"}\n",
+        "startupLogTail": "2026-09-09T03:32:38.564Z spawned headroom proxy pid=21540 upstream=third-party openai=http://127.0.0.1:18081 anthropic=http://127.0.0.1:9\n",
+        "proxyLogTail": "(<unreadable: Error: ENOENT: no such file or directory, open 'C:\\Users\\Administrator\\.dsh-head>)",
+        "sidecarExists": "http://127.0.0.1:18081"
+      }
+    }
+  ],
+  "t0": "2026-09-09T03:32:37.201Z"
+}

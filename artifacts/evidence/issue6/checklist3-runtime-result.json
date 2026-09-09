@@ -1,0 +1,64 @@
+{
+  "meta": "清单 3 运行态。脚本 checklist3-runtime.mjs 执行于 2026-09-09T08:11Z，代理为受控 runner（proxy-runner.mjs official）以官方双端点 argv 启动的 headroom 0.37.0；脚本末尾 netstat 步骤被执行环境拦截（EPERM），未影响前序取证，本文件由控制台输出补档。",
+  "steps": [
+    {
+      "name": "livez",
+      "at": "2026-09-09T08:11:31Z",
+      "data": {
+        "status": 200,
+        "body": {
+          "service": "headroom-proxy",
+          "status_field": "healthy",
+          "alive": true,
+          "version": "0.37.0",
+          "uptime_seconds": 42.438,
+          "loop_health": { "status": "healthy", "known_failures": 0 }
+        }
+      }
+    },
+    {
+      "name": "readyz",
+      "at": "2026-09-09T08:11:31Z",
+      "data": {
+        "status": 200,
+        "ready": true,
+        "checks_upstream": {
+          "enabled": true,
+          "ready": true,
+          "status": "healthy",
+          "url": "https://api.deepseek.com/anthropic",
+          "error": null
+        },
+        "note": "upstream 检查探测官方 Anthropic 端点成功 → 双端点（OpenAI https://api.deepseek.com 由 argv 锁定、Anthropic 由 readyz 实测）"
+      }
+    },
+    {
+      "name": "stats-history.lifetime",
+      "at": "2026-09-09T08:11:31Z",
+      "data": {
+        "requests": 300,
+        "tokens_saved": 107478,
+        "compression_savings_usd": 0.072965,
+        "cache_read_tokens": 26676224,
+        "cache_savings_usd": 17.193036,
+        "total_input_tokens": 28284478,
+        "total_input_cost_usd": 1.504003,
+        "storage_path": "C:\\Users\\Administrator\\.headroom\\proxy_savings.json",
+        "note": "累计统计连续、未被清零；该存储由引擎管理，#5/#6 改动（spawn 参数/日志路径）不触及。"
+      }
+    },
+    {
+      "name": "stats.summary",
+      "data": { "mode": "cache", "api_requests": 0, "note": "本进程新会话计数为零，与 lifetime 累计（stats-history）分层一致，符合改动前行为。" }
+    },
+    {
+      "name": "already-running",
+      "at": "2026-09-09T08:11:36Z",
+      "data": {
+        "status": 200,
+        "body": { "ok": true, "alreadyRunning": true },
+        "note": "活代理时再点启动早退；startup.log 在此调用后无新增 spawn 行，进程未被重启/换上游。"
+      }
+    }
+  ]
+}
