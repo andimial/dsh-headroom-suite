@@ -64,6 +64,18 @@ export function routeOf(baseURL: string | undefined): RouteKind {
 }
 
 /**
+ * True when a value selects the third-party route per the shared
+ * {@link routeOf} — pure route classification, no scheme check: any value
+ * that is neither blank, an official spelling nor the Headroom proxy counts
+ * (e.g. when preserving the user's current value to the saved file). When
+ * the value will actually become an upstream, or is untrusted user input,
+ * require {@link isUsableThirdPartyBaseURL} instead.
+ */
+export function isThirdPartyBaseURL(baseURL: unknown): baseURL is string {
+  return typeof baseURL === 'string' && routeOf(baseURL) === 'third-party'
+}
+
+/**
  * True when a value may be written as a third-party baseURL: it must carry an
  * http(s) scheme and classify as third-party (not official, not Headroom).
  */

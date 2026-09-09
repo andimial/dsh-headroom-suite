@@ -16,8 +16,9 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only import: pulls in the @deepseek-ai/dsh-settings ambient
 // declarations (ctx.settings.get) without a runtime dependency.
 import type {} from '@deepseek-ai/dsh-settings'
+import { spawn } from 'node:child_process'
 import { HEADROOM_PORT, LLM_DEEPSEEK_NAMESPACE } from './constants.ts'
-import { proxyLogPath } from './paths.ts'
+import { appendStartupLog, proxyLogPath, venvHeadroom } from './paths.ts'
 import type { ExpectedUpstream, UpstreamKind } from './upstream.ts'
 
 /**
@@ -63,26 +64,17 @@ export function readSettingsBaseURL(ctx: Context): string | undefined {
  * byte-for-byte the argv both entries used to assemble by hand before #5;
  * the third-party branch swaps the OpenAI upstream for the resolved
  * third-party address and pins the Anthropic route to
- * {@link ANTHROPIC_DISABLED_URL} (issue #4 conclusion).
+ * {@link ANTHROPIC_DISABLED_URL} (issue #4 conclusion). The log file is the
+ * shared {@link proxyLogPath}; the plan carries no other launch decision.
  */
 export function buildProxySpawnPlan(
   upstream: ExpectedUpstream,
-  logFile: string = proxyLogPath(),
 ): ProxySpawnPlan {
-  let anthropicTarget: string
-  if (upstream.anthropicEnabled) {
-    if (upstream.anthropicApiUrl === undefined) {
-      // Resolver contract says enabled ⇒ defined; hitting this means a
-      // resolver bug. Fail loudly — silently substituting the placeholder
-      // would quietly disable the official Anthropic route.
-      throw new Error('resolved upstream enables anthropic but carries no anthropic URL')
-    }
-    anthropicTarget = upstream.anthropicApiUrl
-  } else {
-    // The engine's flag beats the env fallback (ANTHROPIC_TARGET_API_URL),
-    // so this argv value alone decides where the Anthropic route goes.
-    anthropicTarget = ANTHROPIC_DISABLED_URL
-  }
+  // The engine's flag beats the env fallback (ANTHROPIC_TARGET_API_URL), so
+  // this argv value alone decides where the Anthropic route goes. The
+  // discriminated union guarantees official ⇒ a concrete DeepSeek URL, so no
+  // runtime guard is owed here.
+  const anthropicTarget = upstream.kind === 'official' ? upstream.anthropicApiUrl : ANTHROPIC_DISABLED_URL
   const args = [
     'proxy',
     '--port', String(HEADROOM_PORT),
@@ -91,7 +83,7 @@ export function buildProxySpawnPlan(
     '--host', '127.0.0.1',
     '--connect-timeout-seconds', '15',
     '--request-timeout-seconds', '120',
-    '--log-file', logFile,
+    '--log-file', proxyLogPath(),
   ]
   return {
     args,
@@ -113,4 +105,22 @@ export function formatUpstream(u: UpstreamSummary): string {
 /** One startup.log record: timestamp + pid + the resolved upstream. */
 export function startupLogLine(plan: ProxySpawnPlan, pid: number | undefined): string {
   return `${new Date().toISOString()} spawned headroom proxy pid=${pid ?? '?'} ${formatUpstream(plan.upstream)}\n`
+}
+
+/**
+ * Execute a spawn plan: detached-spawn the headroom executable from the
+ * plugin venv (survives via unref) and append the spawn record to the shared
+ * startup log. Both launch entries call this instead of maintaining a second
+ * spawn+log pair. Returns the child pid (undefined when the platform omits
+ * it).
+ */
+export function spawnDetachedAndLog(plan: ProxySpawnPlan): number | undefined {
+  const child = spawn(venvHeadroom(), [...plan.args], {
+    detached: true,
+    stdio: 'ignore',
+    env: plan.env,
+  })
+  child.unref()
+  appendStartupLog(startupLogLine(plan, child.pid))
+  return child.pid
 }

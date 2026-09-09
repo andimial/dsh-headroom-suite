@@ -1,9 +1,9 @@
 /**
  * 期望上游决议（resolveExpectedUpstream）的输入→输出锁定用例。
  *
- * 覆盖 ADR-0001（docs/adr/0001-upstream-derived-at-start.md）的固定三级
- * 优先级与「保存文件非法视为缺省、不抛错」的回退。只断言纯函数的映射：
- * 不 mock、不读文件、不触 spawn 等副作用。
+ * 覆盖 spec（issue #1）的固定三级优先级与「保存文件非法视为缺省、
+ * 不抛错」的回退。只断言纯函数的映射：不 mock、不读文件、不触 spawn
+ * 等副作用。
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -11,9 +11,9 @@ import {
   DEEPSEEK_OPENAI_URL,
   HEADROOM_BASE_URL,
 } from '../src/constants.ts'
-import { HEADROOM_ENV_PRESET, resolveExpectedUpstream } from '../src/upstream.ts'
+import { anthropicEnabled, HEADROOM_ENV_PRESET, resolveExpectedUpstream } from '../src/upstream.ts'
 
-/** 断言一次决议落在官方上游：官方 OpenAI/Anthropic 端点 + anthropic 启用。 */
+/** 断言一次决议落在官方上游：官方 OpenAI/Anthropic 端点。 */
 function expectOfficialUpstream(
   currentBaseURL: string | undefined,
   savedFileContent: string | undefined,
@@ -21,13 +21,12 @@ function expectOfficialUpstream(
   expect(resolveExpectedUpstream(currentBaseURL, savedFileContent)).toEqual({
     kind: 'official',
     openaiApiUrl: DEEPSEEK_OPENAI_URL,
-    anthropicEnabled: true,
     anthropicApiUrl: DEEPSEEK_ANTHROPIC_URL,
     envPreset: HEADROOM_ENV_PRESET,
   })
 }
 
-/** 断言一次决议落在第三方上游：OpenAI 上游为给定地址且不启用 anthropic。 */
+/** 断言一次决议落在第三方上游：OpenAI 上游为给定地址，且不携带 anthropic 字段。 */
 function expectThirdPartyUpstream(
   currentBaseURL: string | undefined,
   savedFileContent: string | undefined,
@@ -36,8 +35,6 @@ function expectThirdPartyUpstream(
   expect(resolveExpectedUpstream(currentBaseURL, savedFileContent)).toEqual({
     kind: 'third-party',
     openaiApiUrl,
-    anthropicEnabled: false,
-    anthropicApiUrl: undefined,
     envPreset: HEADROOM_ENV_PRESET,
   })
 }
@@ -113,19 +110,18 @@ describe('resolveExpectedUpstream（期望上游决议）', () => {
   })
 
   describe('决议结果', () => {
-    it('官方上游：OpenAI 上游与 anthropic 上游均为 DeepSeek 官方端点', () => {
+    it('官方上游：OpenAI 上游与 anthropic 上游均为 DeepSeek 官方端点，anthropic 启用', () => {
       const result = resolveExpectedUpstream(undefined, undefined)
-      expect(result.kind).toBe('official')
+      expect(anthropicEnabled(result)).toBe(true)
+      if (result.kind !== 'official') throw new Error('expected the official upstream')
       expect(result.openaiApiUrl).toBe(DEEPSEEK_OPENAI_URL)
-      expect(result.anthropicEnabled).toBe(true)
       expect(result.anthropicApiUrl).toBe(DEEPSEEK_ANTHROPIC_URL)
     })
 
-    it('第三方上游：不启用 anthropic 上游（第三方不支 Claude Code）', () => {
+    it('第三方上游：不启用 anthropic，且决议结果不携带 anthropic 字段（非法状态不可表示）', () => {
       const result = resolveExpectedUpstream('https://third.example.com/v1', undefined)
-      expect(result.kind).toBe('third-party')
-      expect(result.anthropicEnabled).toBe(false)
-      expect(result.anthropicApiUrl).toBeUndefined()
+      expect(anthropicEnabled(result)).toBe(false)
+      expect(result).not.toHaveProperty('anthropicApiUrl')
     })
 
     it('环境预设组：两种上游一致（DETECT_BACKEND=python / TOOL_SEARCH=off / DISABLE_KOMPRESS=1）', () => {

@@ -1,6 +1,6 @@
 /**
  * Expected-upstream resolution (期望上游决议) — the single pure decision
- * function from ADR-0001 (docs/adr/0001-upstream-derived-at-start.md). The
+ * function the spec (issue #1) prescribes. The
  * two proxy spawn entries (src/index.ts /headroom-start and src/routes.ts
  * /headroom-mgr/start) consume this one decision instead of hardcoding the
  * DeepSeek upstreams.
@@ -42,24 +42,39 @@ export const HEADROOM_ENV_PRESET: Readonly<Record<string, string>> = {
   HEADROOM_DISABLE_KOMPRESS: '1',
 }
 
-/** The resolution result: everything a spawn site needs to launch the proxy. */
-export interface ExpectedUpstream {
-  /** 上游种类 — DeepSeek official or a third-party address. */
-  readonly kind: UpstreamKind
+/**
+ * The resolution result: everything a spawn site needs to launch the proxy.
+ * Discriminated on {@link UpstreamKind}: whether the Anthropic route is
+ * enabled is encoded by the kind itself (official = enabled with the DeepSeek
+ * Anthropic endpoint; third-party = disabled — third-party upstreams serve
+ * OpenAI protocol only), so an "enabled but URL-less" upstream is
+ * unrepresentable by construction. Read the flag through
+ * {@link anthropicEnabled}.
+ */
+export type ExpectedUpstream = {
+  readonly kind: 'official'
   /** Value for the engine's `--openai-api-url`. */
   readonly openaiApiUrl: string
-  /** Whether the engine gets `--anthropic-api-url`; third-party upstreams serve OpenAI protocol only (no Claude Code). */
-  readonly anthropicEnabled: boolean
-  /** Value for `--anthropic-api-url`; defined iff {@link ExpectedUpstream.anthropicEnabled}. */
-  readonly anthropicApiUrl: string | undefined
+  /** Value for the engine's `--anthropic-api-url`. */
+  readonly anthropicApiUrl: string
   /** 环境预设组 — shared env preset for the proxy process. */
   readonly envPreset: Readonly<Record<string, string>>
+} | {
+  readonly kind: 'third-party'
+  /** Value for the engine's `--openai-api-url`. */
+  readonly openaiApiUrl: string
+  /** 环境预设组 — shared env preset for the proxy process. */
+  readonly envPreset: Readonly<Record<string, string>>
+}
+
+/** Whether the resolved upstream also serves the Anthropic route (是否启用 anthropic 上游). */
+export function anthropicEnabled(upstream: ExpectedUpstream): boolean {
+  return upstream.kind === 'official'
 }
 
 const OFFICIAL_UPSTREAM: ExpectedUpstream = {
   kind: 'official',
   openaiApiUrl: DEEPSEEK_OPENAI_URL,
-  anthropicEnabled: true,
   anthropicApiUrl: DEEPSEEK_ANTHROPIC_URL,
   envPreset: HEADROOM_ENV_PRESET,
 }
@@ -68,8 +83,6 @@ function thirdPartyUpstream(openaiApiUrl: string): ExpectedUpstream {
   return {
     kind: 'third-party',
     openaiApiUrl,
-    anthropicEnabled: false,
-    anthropicApiUrl: undefined,
     envPreset: HEADROOM_ENV_PRESET,
   }
 }
@@ -89,7 +102,7 @@ function savedThirdPartyAddress(savedFileContent: string | undefined): string | 
 
 /**
  * Resolve the expected upstream (期望上游) for a proxy start, in the fixed
- * priority of ADR-0001:
+ * priority of the spec (issue #1):
  *
  * 1. the current baseURL classifies as third-party (第三方直发线路) → that
  *    address is the third-party upstream;

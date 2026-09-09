@@ -17,12 +17,10 @@ import { spawn, execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { HEADROOM_PORT } from './constants.ts'
 import {
-  appendStartupLog, installLogPath, pluginHome, proxyLogPath,
-  readSavedBaseURL, venvCreateLogPath, venvDir, venvHeadroom, venvPython,
+  installLogPath, pluginHome, readSavedBaseURL, venvCreateLogPath, venvDir, venvHeadroom, venvPython,
 } from './paths.ts'
 import { mountManagerRoutes } from './routes.ts'
-import { buildProxySpawnPlan, formatUpstream, readSettingsBaseURL, startupLogLine } from './spawn.ts'
-import type { UpstreamSummary } from './spawn.ts'
+import { buildProxySpawnPlan, formatUpstream, readSettingsBaseURL, spawnDetachedAndLog } from './spawn.ts'
 import { resolveExpectedUpstream } from './upstream.ts'
 
 export { DEEPSEEK_ANTHROPIC_URL, DEEPSEEK_OPENAI_URL, DIRECT_BASE_URL, HEADROOM_BASE_URL, HEADROOM_LIVEZ_URL, HEADROOM_PORT, LLM_DEEPSEEK_NAMESPACE, PLUGIN_NAME } from './constants.ts'
@@ -132,13 +130,13 @@ export async function ensureInstalled(log: (message: string) => void): Promise<{
  * install/health preflight so it reflects the `llm-deepseek` state of the
  * start instant; the saved third-party address (保存文件) is read alongside
  * it. A proxy that is already running is never re-targeted. Returns the
- * spawn outcome (the proxy needs a few seconds to become healthy) plus the
- * resolved upstream.
+ * spawn outcome (the proxy needs a few seconds to become healthy); the
+ * resolved upstream is rendered into the message and the startup log.
  */
 export async function startProxy(
   log: (message: string) => void,
   getBaseURL: () => string | undefined,
-): Promise<{ ok: boolean; message: string; upstream?: UpstreamSummary }> {
+): Promise<{ ok: boolean; message: string }> {
   if (!venvReady()) {
     const installed = await ensureInstalled(log)
     if (!installed.ok) return installed
@@ -147,16 +145,10 @@ export async function startProxy(
   const health = await probeHealth(1500)
   if (health.healthy) return { ok: true, message: 'Headroom already running.' }
 
-  const plan = buildProxySpawnPlan(resolveExpectedUpstream(getBaseURL(), readSavedBaseURL()), proxyLogPath())
+  const plan = buildProxySpawnPlan(resolveExpectedUpstream(getBaseURL(), readSavedBaseURL()))
   try {
-    const child = spawn(venvHeadroom(), [...plan.args], {
-      detached: true,
-      stdio: 'ignore',
-      env: plan.env,
-    })
-    child.unref()
-    appendStartupLog(startupLogLine(plan, child.pid))
-    log(`Headroom proxy starting (pid ${child.pid}, ${formatUpstream(plan.upstream)}). Waiting for health...`)
+    const pid = spawnDetachedAndLog(plan)
+    log(`Headroom proxy starting (pid ${pid ?? '?'}, ${formatUpstream(plan.upstream)}). Waiting for health...`)
     // Cold start loads transformers/tokenizers from a cold venv — measured
     // ~50-90s on this machine; poll up to 120s.
     for (let i = 0; i < 120; i++) {
@@ -166,14 +158,12 @@ export async function startProxy(
         return {
           ok: true,
           message: `Headroom healthy (v${now.version ?? '?'}). ${formatUpstream(plan.upstream)}.`,
-          upstream: plan.upstream,
         }
       }
     }
     return {
       ok: true,
       message: `Headroom process started; health check still warming up (cold start). ${formatUpstream(plan.upstream)}.`,
-      upstream: plan.upstream,
     }
   } catch (error) {
     return { ok: false, message: `Failed to start Headroom: ${error instanceof Error ? error.message : String(error)}` }

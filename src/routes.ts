@@ -17,7 +17,7 @@
  * All writes check same-origin (Origin header must match Host) so a cross-site
  * page cannot start or kill processes through the user's browser (CSRF).
  */
-import { spawn, exec } from 'node:child_process'
+import { exec } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -29,29 +29,22 @@ import {
   HEADROOM_BASE_URL,
   HEADROOM_LIVEZ_URL,
   HEADROOM_PORT,
+  isThirdPartyBaseURL,
   isUsableThirdPartyBaseURL,
   LLM_DEEPSEEK_NAMESPACE,
   MGR_ROUTE_PATH,
   MGR_START_PATH,
   MGR_STATUS_PATH,
   MGR_STOP_PATH,
-  routeOf,
 } from './constants.ts'
 import {
-  appendStartupLog,
   deleteSavedBaseURL,
-  proxyLogPath,
   readSavedBaseURL,
   venvHeadroom,
   writeSavedBaseURL,
 } from './paths.ts'
-import { buildProxySpawnPlan, readSettingsBaseURL, startupLogLine } from './spawn.ts'
+import { buildProxySpawnPlan, readSettingsBaseURL, spawnDetachedAndLog } from './spawn.ts'
 import { resolveExpectedUpstream } from './upstream.ts'
-
-/** True when a baseURL selects the third-party route (shared `routeOf`). */
-function isThirdPartyBaseURL(baseURL: unknown): baseURL is string {
-  return typeof baseURL === 'string' && routeOf(baseURL) === 'third-party'
-}
 
 interface SavingsLifetime {
   requests?: number
@@ -311,22 +304,14 @@ export function mountManagerRoutes(ctx: Context): () => void {
           // Trade-off: a plain detached child dies with the dsh host process
           // tree (Windows job object semantics) — restart the proxy after a
           // host crash.
-          const exe = venvHeadroom()
-          if (!existsSync(exe)) {
+          if (!existsSync(venvHeadroom())) {
             sendJson(response, 409, { ok: false, error: 'headroom not installed; run /headroom-install' })
             return
           }
           const plan = buildProxySpawnPlan(
             resolveExpectedUpstream(readSettingsBaseURL(ctx), readSavedBaseURL()),
-            proxyLogPath(),
           )
-          const child = spawn(exe, [...plan.args], {
-            detached: true,
-            stdio: 'ignore',
-            env: plan.env,
-          })
-          child.unref()
-          appendStartupLog(startupLogLine(plan, child.pid))
+          spawnDetachedAndLog(plan)
           // give the proxy a moment to bind before reporting: cold start loads
           // transformers/tokenizers from a cold venv (~50-90s on this machine,
           // measured); poll up to 120s before reporting not-ready.

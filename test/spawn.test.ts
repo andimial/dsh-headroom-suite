@@ -9,8 +9,10 @@
  *    （issue #4 取证结论：缺省会外发官方端点，必须显式禁用），argv 中
  *    不出现任何 api.deepseek.com。
  *
- * 构造器只做纯拼接、不做 I/O；logFile 可由调用方显式传入（缺省取共享
- * proxyLogPath()，仅是路径拼接，同样不读盘）。
+ * 构造器只做纯拼接、不做 I/O；--log-file 固定取共享 proxyLogPath()（仅
+ * 路径拼接，不读盘）。ExpectedUpstream 是按 kind 判别的联合：官方分支的
+ * anthropicApiUrl 为必填 string、第三方分支没有该字段，旧版「enabled 却
+ * 无 URL」的运行时守卫在类型层已不可触发，随之删除。
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -23,24 +25,21 @@ import { proxyLogPath } from '../src/paths.ts'
 import { ANTHROPIC_DISABLED_URL, buildProxySpawnPlan, startupLogLine } from '../src/spawn.ts'
 import { HEADROOM_ENV_PRESET, resolveExpectedUpstream } from '../src/upstream.ts'
 
-const LOG_FILE = 'C:/tmp/proxy.test.log'
-
 /** 官方上游（优先级 3 的原始输入）构造出的完整计划。 */
 function officialPlan(): ReturnType<typeof buildProxySpawnPlan> {
-  return buildProxySpawnPlan(resolveExpectedUpstream(undefined, undefined), LOG_FILE)
+  return buildProxySpawnPlan(resolveExpectedUpstream(undefined, undefined))
 }
 
 /** 压缩线路 + 合法第三方保存文件（优先级 2）构造出的第三方计划。 */
 function thirdPartyPlan(): ReturnType<typeof buildProxySpawnPlan> {
   return buildProxySpawnPlan(
     resolveExpectedUpstream(HEADROOM_BASE_URL, 'https://third.example.com/v1'),
-    LOG_FILE,
   )
 }
 
 describe('buildProxySpawnPlan（共享参数构造器）', () => {
   describe('官方分支（DeepSeek）', () => {
-    it('argv 与改动前两入口手拼的数组逐字一致（回归锁定）', () => {
+    it('argv 与改动前两入口手拼的数组逐字一致（回归锁定；--log-file 为共享 proxyLogPath）', () => {
       expect(officialPlan().args).toEqual([
         'proxy',
         '--port', String(HEADROOM_PORT),
@@ -49,7 +48,7 @@ describe('buildProxySpawnPlan（共享参数构造器）', () => {
         '--host', '127.0.0.1',
         '--connect-timeout-seconds', '15',
         '--request-timeout-seconds', '120',
-        '--log-file', LOG_FILE,
+        '--log-file', proxyLogPath(),
       ])
     })
 
@@ -61,22 +60,12 @@ describe('buildProxySpawnPlan（共享参数构造器）', () => {
       expect(env.PATH).toBe(process.env.PATH)
     })
 
-    it('logFile 缺省取共享 proxyLogPath()', () => {
-      const plan = buildProxySpawnPlan(resolveExpectedUpstream(undefined, undefined))
-      expect(plan.args.at(-1)).toBe(proxyLogPath())
-    })
-
     it('upstream 摘要：官方种类 + 双官方端点', () => {
       expect(officialPlan().upstream).toEqual({
         kind: 'official',
         openaiApiUrl: DEEPSEEK_OPENAI_URL,
         anthropicApiUrl: DEEPSEEK_ANTHROPIC_URL,
       })
-    })
-
-    it('决议违约（enabled 却无 anthropic URL）→ 响亮抛错，绝不静默落占位', () => {
-      const broken = { ...resolveExpectedUpstream(undefined, undefined), anthropicApiUrl: undefined } as Parameters<typeof buildProxySpawnPlan>[0]
-      expect(() => buildProxySpawnPlan(broken, LOG_FILE)).toThrow('no anthropic URL')
     })
   })
 
@@ -100,7 +89,6 @@ describe('buildProxySpawnPlan（共享参数构造器）', () => {
     it('第三方直发线路（优先级 1）同样落在占位上', () => {
       const plan = buildProxySpawnPlan(
         resolveExpectedUpstream('https://direct.example.com/api', undefined),
-        LOG_FILE,
       )
       expect(plan.args).toContain(ANTHROPIC_DISABLED_URL)
       expect(plan.upstream.kind).toBe('third-party')
@@ -131,7 +119,7 @@ describe('buildProxySpawnPlan（共享参数构造器）', () => {
         { input: ['https://direct.example.com/api', undefined] as const, openai: 'https://direct.example.com/api', kind: 'third-party' },
       ]
       for (const s of scenarios) {
-        const plan = buildProxySpawnPlan(resolveExpectedUpstream(s.input[0], s.input[1]), LOG_FILE)
+        const plan = buildProxySpawnPlan(resolveExpectedUpstream(s.input[0], s.input[1]))
         expect(plan.upstream.kind).toBe(s.kind)
         expect(plan.args[plan.args.indexOf('--openai-api-url') + 1]).toBe(s.openai)
       }
