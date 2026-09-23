@@ -11,7 +11,7 @@
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry)
-// and the ctx.settingsScope Context merge.
+// and the ctx.configForms Context merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -35,12 +35,13 @@ const NS = 'dsh-headroom'
 /**
  * Required services (cordis fiber inject). The `settings.section` declaration
  * lives in ui-settings-general's SettingsRoot entry; registration waits on it
- * through `slots.inject()`. `settingsScope` supplies the hot-reloaded
- * `llm-deepseek` namespace scope; `remote` + `remote.commands` expose the host
- * command channel used by the lifecycle buttons (same inject face as
- * dsh-client-ui-plan); `sessions` resolves the active agent id.
+ * through `slots.inject()`. `configForms` (ui-settings' service) supplies the
+ * hot-reloaded `llm-deepseek` namespace scope via `configForms.get(namespace)`;
+ * `remote` + `remote.commands` expose the host command channel used by the
+ * lifecycle buttons (same inject face as dsh-client-ui-plan); `sessions`
+ * resolves the active agent id.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.commands', 'settingsScope', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.commands', 'configForms', 'sessions']
 
 /**
  * Register both Headroom panels once the `settings.section` declaration is on
@@ -50,7 +51,7 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.comman
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-headroom-suite: copy dictionaries')
 
-  const scope = ctx.settingsScope.bind<DeepSeekRouteSettings>({ namespace: LLM_DEEPSEEK_NAMESPACE })
+  const scope = ctx.configForms.get<DeepSeekRouteSettings>(LLM_DEEPSEEK_NAMESPACE)
   const t = ctx.locale.bind(NS) as HeadroomPanelInjected['t']
   // Host command channel: execute('/headroom-install') etc. via the commands
   // remote. The service shape is the official SessionRemotes.commands surface

@@ -16,7 +16,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { HEADROOM_LIVEZ_URL, isUsableThirdPartyBaseURL, MGR_ROUTE_PATH, MGR_STATUS_PATH, routeOf } from '../constants.ts'
 import { EMPTY_STATS, fetchHeadroomStats, formatTokens } from './stats.ts'
 import type { HeadroomStatsView } from './stats.ts'
@@ -31,8 +31,8 @@ export interface DeepSeekRouteSettings {
 
 /** Injected dependencies of {@link HeadroomPanel}. */
 export interface HeadroomPanelInjected {
-  /** Hot-reloaded `llm-deepseek` namespace scope. */
-  scope: SettingsScope<DeepSeekRouteSettings>
+  /** Hot-reloaded `llm-deepseek` namespace form (getSnapshot/subscribe). */
+  scope: ConfigForm<DeepSeekRouteSettings>
   /** Panel copy. */
   t: (key: keyof typeof en) => string
   /** Execute a host command (e.g. '/headroom start') and return its result. */
