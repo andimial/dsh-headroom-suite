@@ -15,14 +15,16 @@
  * 无 URL」的运行时守卫在类型层已不可触发，随之删除。
  */
 import { describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   DEEPSEEK_ANTHROPIC_URL,
   DEEPSEEK_OPENAI_URL,
   HEADROOM_BASE_URL,
   HEADROOM_PORT,
+  LLM_DEEPSEEK_NAMESPACE,
 } from '../src/constants.ts'
 import { proxyLogPath } from '../src/paths.ts'
-import { ANTHROPIC_DISABLED_URL, buildProxySpawnPlan, startupLogLine } from '../src/spawn.ts'
+import { ANTHROPIC_DISABLED_URL, buildProxySpawnPlan, readSettingsBaseURL, startupLogLine } from '../src/spawn.ts'
 import { HEADROOM_ENV_PRESET, resolveExpectedUpstream } from '../src/upstream.ts'
 
 /** 官方上游（优先级 3 的原始输入）构造出的完整计划。 */
@@ -147,5 +149,40 @@ describe('startupLogLine（启动日志行）', () => {
   it('pid 缺失时以 ? 记录、不抛错', () => {
     expect(() => startupLogLine(officialPlan(), undefined)).not.toThrow()
     expect(startupLogLine(officialPlan(), undefined)).toContain('pid=?')
+  })
+})
+
+describe('readSettingsBaseURL（settings 读取）', () => {
+  /**
+   * 照当前核心（0.1.7+）SettingsForms 真实形状造服务：只有
+   * describe/update/replace/mutate，没有旧版 get(ns)。旧实现调用
+   * ctx.settings.get 会抛 "ctx.settings.get is not a function"——
+   * 正是 /headroom-mgr/start 线上 500 的报错原文。
+   */
+  function ctxWithSettings(descriptors: Array<{ ns: string, value?: unknown }>): Context {
+    return {
+      settings: { describe: () => descriptors },
+    } as unknown as Context
+  }
+
+  it('命名空间在场时返回其 baseURL 字符串', () => {
+    const ctx = ctxWithSettings([
+      { ns: 'ui-settings', value: {} },
+      { ns: LLM_DEEPSEEK_NAMESPACE, value: { baseURL: 'https://relay.example.com/v1' } },
+    ])
+    expect(readSettingsBaseURL(ctx)).toBe('https://relay.example.com/v1')
+  })
+
+  it('命名空间缺失时返回 undefined（官方直连缺省）', () => {
+    expect(readSettingsBaseURL(ctxWithSettings([]))).toBeUndefined()
+  })
+
+  it('value 缺失（namespace 无表单值）时不抛错、返回 undefined', () => {
+    expect(readSettingsBaseURL(ctxWithSettings([{ ns: LLM_DEEPSEEK_NAMESPACE }]))).toBeUndefined()
+  })
+
+  it('baseURL 非字符串时返回 undefined', () => {
+    const ctx = ctxWithSettings([{ ns: LLM_DEEPSEEK_NAMESPACE, value: { baseURL: 123 } }])
+    expect(readSettingsBaseURL(ctx)).toBeUndefined()
   })
 })

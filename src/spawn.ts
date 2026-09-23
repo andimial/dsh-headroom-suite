@@ -14,7 +14,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only import: pulls in the @deepseek-ai/dsh-settings ambient
-// declarations (ctx.settings.get) without a runtime dependency.
+// declarations (ctx.settings.describe/mutate) without a runtime dependency.
 import type {} from '@deepseek-ai/dsh-settings'
 import { spawn } from 'node:child_process'
 import { HEADROOM_PORT, LLM_DEEPSEEK_NAMESPACE } from './constants.ts'
@@ -55,7 +55,11 @@ export interface ProxySpawnPlan {
 
 /** Read the current `llm-deepseek` resolved section's baseURL. */
 export function readSettingsBaseURL(ctx: Context): string | undefined {
-  const section = ctx.settings.get(LLM_DEEPSEEK_NAMESPACE) as { baseURL?: unknown } | undefined
+  // 当前核心的 ctx.settings 是 SettingsForms：读全量 namespace 走
+  // describe()（旧版 get(ns) 已随 0.1.7 移除），value 即该 namespace 的
+  // 实时解析表单值。命名空间不在场 ⇒ undefined ⇒ 官方直连缺省。
+  const descriptor = ctx.settings.describe().find((d) => d.ns === LLM_DEEPSEEK_NAMESPACE)
+  const section = descriptor?.value as { baseURL?: unknown } | undefined
   return typeof section?.baseURL === 'string' ? section.baseURL : undefined
 }
 

@@ -23,7 +23,7 @@ import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 // Empty type-only import: pulls in the @deepseek-ai/dsh-settings ambient
-// declarations (ctx.settings.get/mutate) without a runtime dependency.
+// declarations (ctx.settings.describe/mutate) without a runtime dependency.
 import type {} from '@deepseek-ai/dsh-settings'
 import {
   HEADROOM_BASE_URL,
