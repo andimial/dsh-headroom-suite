@@ -87,21 +87,29 @@ export interface ConnectionAdmission {
 /**
  * Shared write guard: POST method + request admission.
  *
- * With a {@link ConnectionAdmission} (the host web composition always provides
- * one) the verdict is the platform's own — that is what lets the Desktop
- * renderer's forwarded requests (no `origin` header, host cookie attached)
- * through while still refusing cross-site pages. Without one, the fallback
- * requires a matching Origin header.
+ * Takes a **getter** for {@link ConnectionAdmission}: the host composition
+ * defines the `connection` service from an async apply (BrowserAuth.create),
+ * so it settles *after* this plugin's routes are mounted — reading it once at
+ * construction would freeze `undefined` forever and silently downgrade every
+ * request to the Origin fallback (the exact Desktop 403 regression). Each
+ * request re-reads the service, so admission upgrades as soon as it settles.
+ *
+ * With the service present (browser + desktop compositions) the verdict is the
+ * platform's own — that is what lets the Desktop renderer's forwarded requests
+ * (no `origin` header, host cookie attached) through while still refusing
+ * cross-site pages. Without one, the fallback requires a matching Origin
+ * header.
  *
  * @returns false when the request must not proceed; the error response is sent.
  */
-export function createWriteGuard(connection: ConnectionAdmission | undefined):
+export function createWriteGuard(getConnection: () => ConnectionAdmission | undefined):
 (request: IncomingMessage, response: ServerResponse) => boolean {
   return (request, response) => {
     if (request.method !== 'POST') {
       sendJson(response, 405, { error: 'method not allowed; use POST' })
       return false
     }
+    const connection = getConnection()
     if (connection !== undefined) {
       const rejection = connection.requestRejection(request)
       if (rejection !== undefined) {
@@ -213,8 +221,11 @@ export function mountManagerRoutes(ctx: Context): () => void {
   // routes. When present (browser + desktop compositions), delegate write
   // admission to it — Desktop's forwarded requests carry no Origin header, so
   // the classic Origin===Host check would reject every Desktop click. When
-  // absent, createWriteGuard falls back to the Origin check.
-  const guardWrite = createWriteGuard(ctx.get('connection') as ConnectionAdmission | undefined)
+  // absent, createWriteGuard falls back to the Origin check. The service is
+  // read lazily per request: it settles from an async apply after route
+  // mounting, so a one-time ctx.get here would freeze undefined and reproduce
+  // the Desktop 403.
+  const guardWrite = createWriteGuard(() => ctx.get('connection') as ConnectionAdmission | undefined)
 
   async function status(): Promise<Record<string, unknown>> {
     const livez = await fetchJson(HEADROOM_LIVEZ_URL) as { version?: string } | undefined
