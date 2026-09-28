@@ -3,6 +3,7 @@ node_modules/
 *.log
 .scratch/
 .tmp-debug/
+/thinking-effort-loaded.json
 data-gym-cache/
 /.codegraph
 /docs
