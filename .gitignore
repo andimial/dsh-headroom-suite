@@ -2,6 +2,7 @@ node_modules/
 .pnpm-store/
 *.log
 .scratch/
+.tmp-debug/
 data-gym-cache/
 /.codegraph
 /docs

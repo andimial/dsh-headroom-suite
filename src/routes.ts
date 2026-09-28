@@ -14,8 +14,15 @@
  *                                preserving any third-party baseURL in a
  *                                sidecar file
  *
- * All writes check same-origin (Origin header must match Host) so a cross-site
- * page cannot start or kill processes through the user's browser (CSRF).
+ * All writes pass a two-mode guard. When the host's `connection` service
+ * (dsh-client-connection) is present, the guard delegates to its
+ * `requestRejection` — the same Host fence + sec-fetch-site + Origin +
+ * SameSite=Strict cookie HMAC check that protects /api. This is required by
+ * the Desktop composition: its renderer runs on the `dsh-app://app` origin and
+ * the Electron main process forwards API requests to the host webServer with
+ * the `origin` header deleted (see dsh-desktop forwardWebRequest), so any
+ * Origin===Host check rejects every Desktop click. Without the service the
+ * guard falls back to the classic Origin===Host CSRF check.
  */
 import { exec } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -67,26 +74,56 @@ function sameOrigin(request: { headers: { origin?: string, host?: string } }): b
   }
 }
 
+/**
+ * Minimal structural type of the host `connection` service face this module
+ * uses (dsh-client-connection Connection.requestRejection): 403 when the
+ * Host/Origin fence rejects, 401 when the signed browser cookie is missing or
+ * invalid, undefined when the request is admitted.
+ */
+export interface ConnectionAdmission {
+  requestRejection(request: { headers: IncomingMessage['headers'] }): number | undefined
+}
+
+/**
+ * Shared write guard: POST method + request admission.
+ *
+ * With a {@link ConnectionAdmission} (the host web composition always provides
+ * one) the verdict is the platform's own — that is what lets the Desktop
+ * renderer's forwarded requests (no `origin` header, host cookie attached)
+ * through while still refusing cross-site pages. Without one, the fallback
+ * requires a matching Origin header.
+ *
+ * @returns false when the request must not proceed; the error response is sent.
+ */
+export function createWriteGuard(connection: ConnectionAdmission | undefined):
+(request: IncomingMessage, response: ServerResponse) => boolean {
+  return (request, response) => {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: 'method not allowed; use POST' })
+      return false
+    }
+    if (connection !== undefined) {
+      const rejection = connection.requestRejection(request)
+      if (rejection !== undefined) {
+        sendJson(response, rejection, { error: rejection === 401 ? 'authentication required' : 'untrusted request' })
+        return false
+      }
+      return true
+    }
+    if (!sameOrigin(request)) {
+      sendJson(response, 403, { error: 'untrusted origin' })
+      return false
+    }
+    return true
+  }
+}
+
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'content-type': 'application/json; charset=utf-8',
   })
   response.end(JSON.stringify(body))
-}
-
-/** Shared write guard: POST method + same-origin (CSRF). Sends the error
- * response itself and returns false when the request must not proceed. */
-function guardWrite(request: IncomingMessage, response: ServerResponse): boolean {
-  if (request.method !== 'POST') {
-    sendJson(response, 405, { error: 'method not allowed; use POST' })
-    return false
-  }
-  if (!sameOrigin(request)) {
-    sendJson(response, 403, { error: 'untrusted origin' })
-    return false
-  }
-  return true
 }
 
 /** Cap so a runaway client cannot buffer unbounded memory; real bodies are <200B. */
@@ -172,6 +209,12 @@ export function mountManagerRoutes(ctx: Context): () => void {
     console.error('[dsh-headroom-suite] webServer absent — routes not mounted')
     return () => {}
   }
+  // The connection service (dsh-client-connection) guards the host's own /api
+  // routes. When present (browser + desktop compositions), delegate write
+  // admission to it — Desktop's forwarded requests carry no Origin header, so
+  // the classic Origin===Host check would reject every Desktop click. When
+  // absent, createWriteGuard falls back to the Origin check.
+  const guardWrite = createWriteGuard(ctx.get('connection') as ConnectionAdmission | undefined)
 
   async function status(): Promise<Record<string, unknown>> {
     const livez = await fetchJson(HEADROOM_LIVEZ_URL) as { version?: string } | undefined
