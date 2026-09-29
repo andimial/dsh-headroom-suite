@@ -22,7 +22,7 @@
 
 - **当前线路**显示：直连（`api.deepseek.com`）/ 压缩（Headroom `:8787`）
 - 一键切换线路：写入 `llm-deepseek.baseURL`，热生效，下一次请求即走新线路
-- Headroom 健康徽标（`/livez` 探测，版本号展示）
+- Headroom 健康徽标（经宿主同源路由 `/headroom-mgr/status` 探测，版本号展示，每 10 秒轮询，代理恢复后自动转绿）
 - **Token 节省统计**（实时）：最近 60 分钟花费、累计节省、累计输入、缓存命中率、请求数（每 10 秒刷新）
 - 「安装 Headroom 引擎」按钮：自动创建隔离 venv 并安装 `headroom-ai[proxy]`
 
@@ -37,6 +37,7 @@
 | 路由                     | 方法 | 说明                                    |
 | ---------------------- | ---- | ------------------------------------- |
 | `/headroom-mgr/status` | GET  | 探测 `/livez` + 读 `/stats-history` 节省统计 |
+| `/headroom-mgr/stats`  | GET  | 透传 `/stats` 给面板（渲染进程读不了 loopback：桌面端 origin 是 `dsh-app://app`，被 Headroom 的 loopback-only CORS 拒） |
 | `/headroom-mgr/start`  | POST | spawn headroom 代理（同源校验防 CSRF）         |
 | `/headroom-mgr/stop`   | POST | 按 8787 端口找 PID 并停止（同源校验）              |
 
@@ -201,7 +202,15 @@ pnpm install        # 或 npm install
 npm run build       # 构建 host lib + client bundle（scripts/build.mjs）
 npm run build:host  # 仅构建宿主半
 npm run build:client # 仅构建客户端
+npm test            # vitest（纯逻辑 + 面板探针/统计回归）
+npm run smoke:desktop # 桌面端组合冒烟：以 dsh-app://app 为页面 origin 跑 lib/client.js，
+                      # 断言面板不再直连 loopback、代理在跑时报健康（需先 build）
 ```
+
+> 桌面端渲染进程的页面 origin 是 `dsh-app://app`（Electron `standard+corsEnabled` 自定义 scheme），
+> Headroom 的 CORS 策略只回 `https?://(localhost|127.0.0.1|\[::1\])`。因此**面板里任何指向
+> `http://127.0.0.1:8787` 的 fetch 在桌面端都会被浏览器拦下**——健康与统计一律走宿主同源路由
+> `/headroom-mgr/status`、`/headroom-mgr/stats`。改动面板数据来源时先跑 `smoke:desktop`。
 
 ---
 

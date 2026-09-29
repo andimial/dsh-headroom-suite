@@ -34,7 +34,8 @@
     "build": "node scripts/build.mjs",
     "build:host": "node scripts/build.mjs --host",
     "build:client": "node scripts/build.mjs --client",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:desktop": "node scripts/smoke-desktop-panel.mjs"
   },
   "files": [
     "lib",

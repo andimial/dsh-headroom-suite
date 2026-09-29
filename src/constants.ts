@@ -29,6 +29,8 @@ export const HEADROOM_LIVEZ_URL = `http://127.0.0.1:${HEADROOM_PORT}/livez`
  * registration and the browser fetches, so the two halves cannot drift.
  */
 export const MGR_STATUS_PATH = '/headroom-mgr/status'
+/** Same-origin passthrough of Headroom `/stats` (see stats.ts for why). */
+export const MGR_STATS_PATH = '/headroom-mgr/stats'
 export const MGR_ROUTE_PATH = '/headroom-mgr/route'
 export const MGR_START_PATH = '/headroom-mgr/start'
 export const MGR_STOP_PATH = '/headroom-mgr/stop'

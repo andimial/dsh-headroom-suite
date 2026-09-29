@@ -4,7 +4,8 @@
  * Presents the Headroom compression route as a control panel:
  *  - current route (direct / compressed / third-party) from the `llm-deepseek`
  *    settings namespace
- *  - Headroom health (probed in-browser; the proxy answers loopback CORS)
+ *  - Headroom health (host-probed over the same-origin /headroom-mgr/status
+ *    route — see ./probe.ts for why the panel must not read :8787 directly)
  *  - one-click route toggle and third-party baseURL entry, both via the
  *    POST /headroom-mgr/route host route
  *
@@ -17,7 +18,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { HEADROOM_LIVEZ_URL, isUsableThirdPartyBaseURL, MGR_ROUTE_PATH, MGR_STATUS_PATH, routeOf } from '../constants.ts'
+import { isUsableThirdPartyBaseURL, MGR_ROUTE_PATH, MGR_STATUS_PATH, routeOf } from '../constants.ts'
+import { probeHeadroom, startHeadroomWatch } from './probe.ts'
 import { EMPTY_STATS, fetchHeadroomStats, formatTokens } from './stats.ts'
 import type { HeadroomStatsView } from './stats.ts'
 import type { en } from './locales.ts'
@@ -57,29 +59,6 @@ interface RouteResponse {
   restoredBaseURL?: string | null
   sidecarCleanupFailed?: boolean
   baseURL?: string
-}
-
-/**
- * Probe Headroom `/livez` once. The proxy answers the loopback origin's CORS
- * preflight, so a plain fetch is sufficient; a timeout or network failure
- * means the route is down.
- * @returns the probe outcome.
- */
-async function probeHeadroom(): Promise<Exclude<ProbeState, { kind: 'idle' | 'probing' }>> {
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 3000)
-    try {
-      const response = await fetch(HEADROOM_LIVEZ_URL, { signal: controller.signal })
-      if (!response.ok) return { kind: 'down' }
-      const body = (await response.json()) as { version?: string }
-      return { kind: 'healthy', version: typeof body.version === 'string' ? body.version : '?' }
-    } finally {
-      clearTimeout(timer)
-    }
-  } catch {
-    return { kind: 'down' }
-  }
 }
 
 /** POST a route-switch payload; returns the HTTP status and parsed reply. */
@@ -133,11 +112,16 @@ function HeadroomPanelBody(props: HeadroomPanelBodyProps): ReactNode {
   const [savedBaseURL, setSavedBaseURL] = useState<string | null>(null)
   const [customURL, setCustomURL] = useState('')
 
+  // Health: same-origin host probe (see probe.ts for why not /livez directly),
+  // re-run on every poll so a proxy that was cold-starting, restarting or
+  // killed comes back green on its own instead of pinning the badge to 「不可达」.
   useEffect(() => {
-    if (!ready || route !== 'headroom' || probe.kind !== 'idle') return
-    setProbe({ kind: 'probing' })
-    void probeHeadroom().then(setProbe)
-  }, [ready, route, probe.kind])
+    if (!ready || route !== 'headroom') {
+      setProbe({ kind: 'idle' })
+      return
+    }
+    return startHeadroomWatch(probeHeadroom, setProbe)
+  }, [ready, route])
 
   // Read the saved third-party baseURL (if any) once on mount so the panel can
   // show what switching back to direct will restore.

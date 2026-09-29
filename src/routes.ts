@@ -8,11 +8,19 @@
  * process. These routes fill that gap with plain HTTP on the host webServer:
  *
  *   GET  /headroom-mgr/status  — probe /livez + read savings stats + PID
+ *   GET  /headroom-mgr/stats   — passthrough of Headroom /stats for the panel
  *   POST /headroom-mgr/start   — spawn headroom.exe detached (survives dsh)
  *   POST /headroom-mgr/stop    — kill the process listening on :8787
  *   POST /headroom-mgr/route   — switch direct/headroom/third-party,
  *                                preserving any third-party baseURL in a
  *                                sidecar file
+ *
+ * The two GETs exist because the panel cannot read loopback directly: the
+ * Desktop composition runs the renderer on `dsh-app://app`, an origin Headroom's
+ * CORS policy (`https?://(localhost|127\.0\.0\.1|\[::1\])…`) refuses, so a
+ * renderer fetch to :8787 is withheld and reads as 「不可达」/零统计. The host
+ * probes loopback in Node, where no CORS applies, and the panel reads these
+ * same-origin routes in both compositions.
  *
  * All writes pass a two-mode guard. When the host's `connection` service
  * (dsh-client-connection) is present, the guard delegates to its
@@ -41,6 +49,7 @@ import {
   LLM_DEEPSEEK_NAMESPACE,
   MGR_ROUTE_PATH,
   MGR_START_PATH,
+  MGR_STATS_PATH,
   MGR_STATUS_PATH,
   MGR_STOP_PATH,
 } from './constants.ts'
@@ -206,7 +215,7 @@ function killPid(pid: string): Promise<boolean> {
 }
 
 /**
- * Mount the three management routes.
+ * Mount the management routes (status / stats / route / start / stop).
  * @returns disposer removing all routes.
  */
 export function mountManagerRoutes(ctx: Context): () => void {
@@ -310,6 +319,18 @@ export function mountManagerRoutes(ctx: Context): () => void {
       path: MGR_STATUS_PATH,
       handler: (_request: IncomingMessage, response: ServerResponse) => {
         void status().then((s) => sendJson(response, 200, s))
+      },
+    }),
+    webServer.register({
+      kind: 'exact',
+      path: MGR_STATS_PATH,
+      handler: (_request: IncomingMessage, response: ServerResponse) => {
+        void fetchJson(`http://127.0.0.1:${HEADROOM_PORT}/stats`).then((stats) => {
+          // 503 (not an empty 200) so the panel can tell "proxy down" from
+          // "proxy up, no numbers yet" and show its unavailable copy.
+          if (stats === undefined) sendJson(response, 503, { error: 'headroom unreachable' })
+          else sendJson(response, 200, stats)
+        })
       },
     }),
     webServer.register({

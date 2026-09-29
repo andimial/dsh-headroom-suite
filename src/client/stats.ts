@@ -1,12 +1,18 @@
 /**
  * Headroom stats types and fetch helper.
  *
- * The proxy exposes a rich /stats endpoint (no auth, loopback CORS). This
- * module extracts the lifetime + display-session token numbers the panel
- * renders. Money display was removed: Headroom's hit_rate is request-level
- * (not token-level) and its token split does not match DeepSeek billing, so
- * any USD/CNY estimate was misleading (see commit history).
+ * The proxy exposes a rich /stats endpoint (no auth), but the panel reads it
+ * through the host's same-origin `/headroom-mgr/stats` passthrough: the renderer
+ * cannot fetch `http://127.0.0.1:8787` itself — the Desktop composition runs on
+ * `dsh-app://app`, which Headroom's loopback-only CORS policy refuses, so the
+ * response is withheld and every number reads zero. This module extracts the
+ * lifetime + display-session token numbers the panel renders. Money display was
+ * removed: Headroom's hit_rate is request-level (not token-level) and its token
+ * split does not match DeepSeek billing, so any USD/CNY estimate was misleading
+ * (see commit history).
  */
+
+import { MGR_STATS_PATH } from '../constants.ts'
 
 /** The persistent lifetime summary Headroom keeps in proxy_savings.json. */
 export interface HeadroomLifetimeStats {
@@ -71,17 +77,17 @@ export const EMPTY_STATS: HeadroomStatsView = {
 }
 
 /**
- * Fetch Headroom /stats and project the panel numbers. A failure returns the
- * empty view with ok=false so the UI can degrade gracefully.
- * @param base - Headroom origin (defaults to the loopback proxy).
+ * Fetch Headroom stats through the host passthrough and project the panel
+ * numbers. A failure returns the empty view with ok=false so the UI can degrade
+ * gracefully.
  * @returns the projected stats view.
  */
-export async function fetchHeadroomStats(base = 'http://127.0.0.1:8787'): Promise<HeadroomStatsView> {
+export async function fetchHeadroomStats(): Promise<HeadroomStatsView> {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 4000)
     try {
-      const response = await fetch(`${base}/stats`, { signal: controller.signal })
+      const response = await fetch(MGR_STATS_PATH, { signal: controller.signal, cache: 'no-store' })
       if (!response.ok) return EMPTY_STATS
       const body = (await response.json()) as HeadroomStatsResponse
       const lifetime = body.persistent_savings?.lifetime
