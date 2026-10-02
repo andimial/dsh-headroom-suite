@@ -26,6 +26,9 @@ const LIVEZ_URL = `http://127.0.0.1:${HEADROOM_PORT}/livez`
 const HEADROOM_ENV = {
   HEADROOM_DETECT_BACKEND: 'python',
   HEADROOM_TOOL_SEARCH: 'off',
+  // Mirror the launcher: without this, CCR replaces long content with <<ccr:HASH>> markers
+  // that callers lacking the headroom_retrieve tool (e.g. DSH) can never redeem.
+  HEADROOM_LOSSLESS: '1',
 }
 
 interface SavingsLifetime {
