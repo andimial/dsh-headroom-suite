@@ -154,6 +154,18 @@ Headroom 的 **CCR（reversible compression）** 会把长内容**整块抽走**
 2. **散文与代码完全不压**（代码还被 `router:protected:analysis_context` 保护）—— 长消息不会变成摘要；
 3. 结构化数据只做**格式重排**（JSON → 列式表 + 表头 schema），**120 行数据一个不少**。
 
+### 触发条件与保护范围（用户消息 vs 工具结果）
+
+上游路由自带一组保护 transform（历史流量中可见）：`router:protected:user_message`、`router:protected:system_message`、`router:protected:error_output`、`router:protected:analysis_context`。
+
+- **用户在聊天框直接发出的消息受保护**，本身不会被压缩；
+- **tool result 不在保护范围** —— 通过提问面板（`ask_user_question`）回答的长内容、以及工具输出，都会进入压缩器；
+- 最初「agent 收不到长消息」正是第二种情况：长内容被包成 **tool result** 送进上下文，被 CCR 抽走换成 `<<ccr:HASH>>`。
+
+也就是说，触发条件是「内容以 tool result 形式进入」或「长到触发压缩阈值」，与内容是不是用户亲手写的无关。`no_ccr` 让前者彻底安全。
+
+> 验收实测（2026-10-03）：用户在聊天框发 4975 字符 / 43 行日志（37 行重复 `log: redirecting ...` + 6 行 TOML 报错），agent 收到**逐行一致的完整原文** —— 无 `<<ccr:>>` 标记、无折叠。注意 `no_ccr` 下重复行仍会被无损折叠成 `原文 + ... (repeated N times)`（可逆、带计数），该折叠同样作用于 agent 读到的工具结果。
+
 ### 本套件已固化
 
 三处启动路径与桌面快捷方式脚本均已带上 `HEADROOM_NO_CCR=1`：
