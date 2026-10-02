@@ -28,7 +28,9 @@ const HEADROOM_ENV = {
   HEADROOM_TOOL_SEARCH: 'off',
   // Mirror the launcher: without this, CCR replaces long content with <<ccr:HASH>> markers
   // that callers lacking the headroom_retrieve tool (e.g. DSH) can never redeem.
-  HEADROOM_LOSSLESS: '1',
+  // no_ccr (not lossless) is the right switch: it drops markers/store only, so Kompress
+  // keeps compressing structured tool output (measured 45% on a 120-row JSON array).
+  HEADROOM_NO_CCR: '1',
 }
 
 interface SavingsLifetime {
