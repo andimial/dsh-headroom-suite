@@ -35,11 +35,17 @@ export type UpstreamKind = 'official' | 'third-party'
  *    proxy binds the port; TEXT/CODE compression still works. Remove once the
  *    model is cached (set HF_ENDPOINT=https://hf-mirror.com and start without
  *    this flag).
+ *  - NO_CCR: without this, CCR replaces long content with <<ccr:HASH>> markers
+ *    that callers lacking the headroom_retrieve tool (e.g. DSH) can never
+ *    redeem. no_ccr (not lossless) is the right switch: it drops markers/store
+ *    only, so Kompress keeps compressing structured tool output (measured 45%
+ *    on a 120-row JSON array).
  */
 export const HEADROOM_ENV_PRESET: Readonly<Record<string, string>> = {
   HEADROOM_DETECT_BACKEND: 'python',
   HEADROOM_TOOL_SEARCH: 'off',
   HEADROOM_DISABLE_KOMPRESS: '1',
+  HEADROOM_NO_CCR: '1',
 }
 
 /**

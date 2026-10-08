@@ -62,7 +62,7 @@ DeepSeek Harness **本身就有压缩能力**（`dsh-compaction-basic` 超预算
 | 层                         | DSH 自带               | 本套件（Headroom 引擎） | dsh-caveman |
 | ------------------------- | -------------------- | ---------------- | ----------- |
 | 会话历史（摘要旧对话）               | ✅ compaction-basic   | ❌ 不碰历史（保护缓存前缀）   | ❌           |
-| 工具结果（超预算修剪）               | ✅ tool-result-pruner | ❌ 保留原文（CCR 可逆）   | ❌           |
+| 工具结果（超预算修剪）               | ✅ tool-result-pruner | ⚠️ 结构化重排（`no_ccr`，语义保留、无 marker）   | ❌           |
 | **请求内（工具 schema / 跨轮冗余）** | ❌ 无                  | ✅ **本套件专攻**      | ❌           |
 | 输出 token（让模型少说）           | ❌                    | ❌                | ✅ 提示词规则     |
 
@@ -137,6 +137,61 @@ headroom.exe proxy --port 8787 \
 
 ---
 
+## ⚠️ CCR 折叠与开关选择（2026-10-03 实测，必读）
+
+Headroom 的 **CCR（reversible compression）** 会把长内容**整块抽走**，只留一个引用标记：
+
+```
+<<ccr:9e450a3b46d2,string,2.2KB>>
+```
+
+原文存进 `~/.headroom/ccr_store.db`（**TTL 1800 秒**），兑换依赖代理**注入的 `headroom_retrieve` 工具**。
+**调用方若没有这个工具（DSH 正是如此），就只能看到哈希、永远读不到正文** —— 表现为「agent 收不到长消息 / 长工具结果」。
+
+### 正确的开关是 `no_ccr`，不是 `lossless`
+
+| 环境变量 | 行为 | 结构化数据（JSON）压缩 |
+| --- | --- | --- |
+| `HEADROOM_NO_CCR=1` | **只**去掉 marker 与 store 写入，其他压缩器照常（上游源码原话：*same compressors, same aggressiveness*） | ✅ 保留（实测 45.3%） |
+| `HEADROOM_LOSSLESS=1` | 改走纯无损折叠，**绕过 Kompress** | ❌ 归零（实测 0%） |
+| 不设（默认） | CCR 开启，长内容被折成哈希 | ✅ 但调用方读不到内容 |
+
+### 实测数据（`POST /v1/compress` 三模式 A/B）
+
+| 样本 | 默认（`lossless`） | 默认（`no_ccr`） | `mode="lossy_inline"` |
+| --- | --- | --- | --- |
+| 重复行 2199 字符（同一行 ×20） | 558→41（**92.7%**） | 558→41（92.7%） | 92.7% |
+| 结构化 JSON 19134 字符（120 条记录） | 4792→4792（**0%**） | 4792→**2620（45.3%）** | 45.3% |
+| 中文散文 368 字符 | 100→100（`router:noop`） | 不压 | 不压 |
+| TypeScript 代码 968 字符 | 250→250（`router:protected:analysis_context`） | 不压（受保护） | 不压 |
+
+三个要点：
+
+1. `no_ccr` 下 **`ccr_hashes` 恒为空** —— 不会再有引用标记，内容不会被抽走；
+2. **散文与代码完全不压**（代码还被 `router:protected:analysis_context` 保护）—— 长消息不会变成摘要；
+3. 结构化数据只做**格式重排**（JSON → 列式表 + 表头 schema），**120 行数据一个不少**。
+
+### 触发条件与保护范围（用户消息 vs 工具结果）
+
+上游路由自带一组保护 transform（历史流量中可见）：`router:protected:user_message`、`router:protected:system_message`、`router:protected:error_output`、`router:protected:analysis_context`。
+
+- **用户在聊天框直接发出的消息受保护**，本身不会被压缩；
+- **tool result 不在保护范围** —— 通过提问面板（`ask_user_question`）回答的长内容、以及工具输出，都会进入压缩器；
+- 最初「agent 收不到长消息」正是第二种情况：长内容被包成 **tool result** 送进上下文，被 CCR 抽走换成 `<<ccr:HASH>>`。
+
+也就是说，触发条件是「内容以 tool result 形式进入」或「长到触发压缩阈值」，与内容是不是用户亲手写的无关。`no_ccr` 让前者彻底安全。
+
+> 验收实测（2026-10-03）：用户在聊天框发 4975 字符 / 43 行日志（37 行重复 `log: redirecting ...` + 6 行 TOML 报错），agent 收到**逐行一致的完整原文** —— 无 `<<ccr:>>` 标记、无折叠。注意 `no_ccr` 下重复行仍会被无损折叠成 `原文 + ... (repeated N times)`（可逆、带计数），该折叠同样作用于 agent 读到的工具结果。
+
+### 本套件已固化
+
+三处启动路径与桌面快捷方式脚本均已带上 `HEADROOM_NO_CCR=1`：
+`src/index.ts`、`src/routes.ts`（`HEADROOM_ENV`）、`lib/index.js`，以及 `~/.headroom/start-headroom.vbs`。
+
+> 经验教训：曾用 `HEADROOM_LOSSLESS=1` 临时止血（标记确实消失），但代价是**结构化数据压缩整体归零**。该开关适合「内容绝对完整优先」，不适合本套件的省 token 目标。
+
+---
+
 ## 与 dsh-caveman 配合
 
 [caveman](https://github.com/wjxn13/dsh-caveman) 负责**输出侧**压缩，与本套件（**输入侧**压缩 + 线路/进程管理）互补。两者可同时安装。
@@ -183,6 +238,13 @@ Headroom **0.35.0 起提供 Windows 预编译 wheel**（`headroom_ai-*-win_amd64
 ### 缓存命中很高但「节省」数字低
 
 **正常现象**。这说明大头已走 DeepSeek 折扣缓存（约 1/10 价），压缩器只负责边际的新内容——这正是设计目标，不必追求高压缩数字。
+
+### agent 只收到 `<<ccr:HASH,...>>`，读不到正文
+
+**现象**：模型侧看到 `<<ccr:9e450a3b46d2,string,2.2KB>>` 这类引用，内容为空。
+**原因**：CCR 把原文抽进 `~/.headroom/ccr_store.db`（TTL 1800 秒），兑换需要 `headroom_retrieve` 工具，而 DSH 没有注入它。
+**修复**：启动代理时设 `HEADROOM_NO_CCR=1`（见上文「CCR 折叠与开关选择」）。套件面板与路由启动已内置。
+**临时取回**：`GET http://127.0.0.1:8787/v1/retrieve/{hash}`（loopback，无需认证）——但超过 1800 秒会返回 404。
 
 ---
 
